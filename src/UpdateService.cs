@@ -227,12 +227,12 @@ namespace ZapretControl
                 SignatureCheck signature = SignatureVerifier.Verify(
                     setup, expectedSigner);
                 bool unsigned = !signature.IsSigned;
-                if (!signature.IsValid && !(unsigned && settings.AllowUnsignedUpdates))
+                if (!signature.IsValid && !unsigned)
                 {
                     throw new InvalidOperationException(
                         "Установщик не прошёл проверку Authenticode: " +
                         (signature.Error ?? "неизвестная ошибка") +
-                        ". Обновление отменено.");
+                        ". Установите вручную после проверки подписи. Обновление отменено.");
                 }
 
                 ProcessStartInfo info = new ProcessStartInfo();

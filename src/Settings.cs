@@ -17,7 +17,6 @@ namespace ZapretControl
         public string InstallDate { get; set; }
         public bool RegisterSyncTask { get; set; }
         public string UpdateSignerThumbprint { get; set; }
-        public bool AllowUnsignedUpdates { get; set; }
 
         public SettingsData()
         {
@@ -31,7 +30,6 @@ namespace ZapretControl
             InstallDate = string.Empty;
             RegisterSyncTask = true;
             UpdateSignerThumbprint = string.Empty;
-            AllowUnsignedUpdates = false;
         }
     }
 

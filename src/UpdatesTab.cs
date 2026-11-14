@@ -52,8 +52,7 @@ namespace ZapretControl
             _updateApp.Enabled = false;
             _rollback.Enabled = false;
             AddMutedLabel(status,
-                "Обновление приложения запускает подписанный Setup.exe и закрывает GUI; " +
-                "payload ставится через staging, backup и rollback.",
+                "Обновление приложения: SHA256 проверяется всегда, подпись — если Setup подписан.",
                 20, 158, 812, 20);
 
             CardPanel settings = AddCard("ИСТОЧНИК", 0, 206, 852, 110);
@@ -286,9 +285,13 @@ namespace ZapretControl
             {
                 return;
             }
-            if (!Confirm("Скачать и установить Zapret Control " + _result.LatestAppVersion +
-                         "?\nПриложение закроется, установщик обновит файлы и запустит " +
-                         "новую версию. Настройки и payload сохранятся."))
+            string question = "Скачать и установить Zapret Control " +
+                _result.LatestAppVersion +
+                "?\nПриложение закроется, установщик обновит файлы и запустит " +
+                "новую версию. Настройки и payload сохранятся.";
+            question += "\nНеподписанный установщик принимается без проверки издателя " +
+                        "(SHA256 проверяется).";
+            if (!Confirm(question))
             {
                 return;
             }

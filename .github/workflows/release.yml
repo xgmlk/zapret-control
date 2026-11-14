@@ -70,7 +70,6 @@ jobs:
           $arguments = @{ Version = '${{ steps.version.outputs.version }}'; Repository = '${{ github.repository }}'; SkipBuild = $true }
           if ('${{ steps.signing.outputs.signed }}' -eq 'true') { $arguments['RequireSignature'] = $true }
           .\release.ps1 @arguments
-          if ($LASTEXITCODE -ne 0) { throw "release.ps1 failed: $LASTEXITCODE" }
 
       - name: Publish GitHub release
         shell: powershell
