@@ -32,6 +32,7 @@ namespace ZapretControl
         private readonly Timer _timer;
         private Label _footer;
         private int _activeIndex = -1;
+        private int _firstRunRetries;
 
         public MainForm()
         {
@@ -137,7 +138,7 @@ namespace ZapretControl
             {
                 ActivateTab(0);
                 RefreshActiveTab();
-                ((UpdatesTab)_tabs[5]).CheckIfDue();
+                BeginInvoke(new Action(CheckFirstRunAndUpdates));
             };
             FormClosing += OnFormClosing;
 
@@ -307,6 +308,100 @@ namespace ZapretControl
         private void OnTimerTick(object sender, EventArgs e)
         {
             RefreshActiveTab();
+        }
+
+        private void CheckFirstRunAndUpdates()
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            CheckFirstRun();
+            // Start the update check only after the first-run dialog closes so
+            // a payload update cannot change the service under the prompt.
+            if (!OperationGuard.IsBusy)
+            {
+                ((UpdatesTab)_tabs[5]).CheckIfDue();
+            }
+        }
+
+        // Shown after the main window is painted. The flag is persisted only
+        // after an explicit choice, so closing this dialog asks again next time.
+        private void CheckFirstRun()
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SettingsData settings = Settings.Load();
+            if (settings.FirstRunCompleted)
+            {
+                return;
+            }
+            if (OperationGuard.IsBusy)
+            {
+                if (_firstRunRetries < 3)
+                {
+                    _firstRunRetries++;
+                    Timer retry = new Timer();
+                    retry.Interval = 3000;
+                    retry.Tick += delegate
+                    {
+                        retry.Stop();
+                        retry.Dispose();
+                        CheckFirstRunAndUpdates();
+                    };
+                    retry.Start();
+                }
+                return;
+            }
+            _firstRunRetries = 0;
+            string root = AppPaths.ResolvePayloadRoot();
+            bool payload = AppPaths.IsPayloadRoot(root);
+            int strategies = payload ? StrategyParser.ListStrategies(root).Count : 0;
+            if (!payload || strategies == 0)
+            {
+                settings.FirstRunCompleted = true;
+                Settings.Save();
+                MessageBox.Show(
+                    this,
+                    payload
+                        ? "В payload нет стратегий .bat. Переустановите Zapret Control " +
+                          "или проверьте папку zapret."
+                        : "Payload zapret не найден. Переустановите Zapret Control " +
+                          "или проверьте папку zapret.",
+                    "Первый запуск",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            FirstRunChoice choice;
+            using (FirstRunForm form = new FirstRunForm())
+            {
+                form.ShowDialog(this);
+                if (IsDisposed || Disposing)
+                {
+                    return;
+                }
+                choice = form.Choice;
+            }
+            if (choice == FirstRunChoice.None)
+            {
+                return;
+            }
+            settings.FirstRunCompleted = true;
+            Settings.Save();
+            HomeTab home = (HomeTab)_tabs[0];
+            ActivateTab(0);
+            if (choice == FirstRunChoice.Advise)
+            {
+                home.StartAdvice(false);
+            }
+            else if (choice == FirstRunChoice.Manual)
+            {
+                home.StartManualSelection();
+            }
         }
 
         private void RefreshActiveTab()

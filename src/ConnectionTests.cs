@@ -147,13 +147,13 @@ namespace ZapretControl
             }
         }
 
-        // Short probe used by the strategy advisor: winws.exe is already running
-        // as a temporary process, so the report must not ask the service state.
-        public static ConnectionTestReport RunProbe(string[] urls, int timeoutMs)
+        // Single URL probe used by the strategy advisor: winws.exe is already
+        // running as a temporary process, so the report must not ask the
+        // service state.
+        public static ConnectionTestResult ProbeUrl(string url, int timeoutMs)
         {
-            ConnectionTestReport report = new ConnectionTestReport("проверка");
-            RunDpiUrls(report, urls, timeoutMs, null);
-            return report;
+            EnableTls();
+            return ProbeUrl(url, timeoutMs, null);
         }
 
         // Compact home-tab check: same DPI hosts, shorter timeout than the
@@ -163,6 +163,12 @@ namespace ZapretControl
             ConnectionTestReport report = new ConnectionTestReport("быстрая");
             string bypass = "bypass " + ZapretService.GetStatus().State;
             RunDpiUrls(report, DpiUrls, 10000, bypass);
+            YouTubeProbeResult video = YouTubeProbe.Run(10000, 3);
+            report.Results.Add(new ConnectionTestResult(
+                "YouTube видео",
+                video.CdnOk,
+                video.Detail,
+                video.ElapsedMs));
             return report;
         }
 
@@ -171,6 +177,15 @@ namespace ZapretControl
             EnableTls();
             string bypass = "bypass " + ZapretService.GetStatus().State;
             RunDpiUrls(report, DpiUrls, 15000, bypass);
+
+            // The DPI test must verify playback, not only the YouTube home
+            // page: DPI can pass short HTTPS responses and cut media traffic.
+            YouTubeProbeResult video = YouTubeProbe.Run(15000, 3);
+            report.Results.Add(new ConnectionTestResult(
+                "YouTube видео",
+                video.CdnOk,
+                video.Detail,
+                video.ElapsedMs));
         }
 
         private static void RunDpiUrls(
@@ -179,57 +194,60 @@ namespace ZapretControl
             EnableTls();
             foreach (string url in urls)
             {
-                Stopwatch watch = Stopwatch.StartNew();
-                try
+                report.Results.Add(ProbeUrl(url, timeoutMs, bypass));
+            }
+        }
+
+        private static ConnectionTestResult ProbeUrl(
+            string url, int timeoutMs, string bypass)
+        {
+            Stopwatch watch = Stopwatch.StartNew();
+            try
+            {
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "GET";
+                request.UserAgent = "ZapretControl/" + AppInfo.Version;
+                request.Proxy = null;
+                request.Timeout = timeoutMs;
+                request.ReadWriteTimeout = timeoutMs;
+                request.KeepAlive = false;
+                request.AllowAutoRedirect = true;
+                request.MaximumAutomaticRedirections = 5;
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                 {
-                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                    request.Method = "GET";
-                    request.UserAgent = "ZapretControl/" + AppInfo.Version;
-                    request.Proxy = null;
-                    request.Timeout = timeoutMs;
-                    request.ReadWriteTimeout = timeoutMs;
-                    request.KeepAlive = false;
-                    request.AllowAutoRedirect = true;
-                    request.MaximumAutomaticRedirections = 5;
-                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                    {
-                        int code = (int)response.StatusCode;
-                        watch.Stop();
-                        report.Results.Add(new ConnectionTestResult(
-                            url,
-                            code >= 200 && code < 500,
-                            Detail("HTTP " + code, bypass),
-                            watch.ElapsedMilliseconds));
-                    }
-                }
-                catch (WebException ex)
-                {
+                    int code = (int)response.StatusCode;
                     watch.Stop();
-                    HttpWebResponse response = ex.Response as HttpWebResponse;
-                    if (response != null)
-                    {
-                        int code = (int)response.StatusCode;
-                        response.Dispose();
-                        report.Results.Add(new ConnectionTestResult(
-                            url,
-                            code >= 200 && code < 500,
-                            Detail("HTTP " + code + " (WebException)", bypass),
-                            watch.ElapsedMilliseconds));
-                    }
-                    else
-                    {
-                        report.Results.Add(new ConnectionTestResult(
-                            url, false, "Ошибка: " + ex.Status,
-                            watch.ElapsedMilliseconds));
-                    }
+                    return new ConnectionTestResult(
+                        url,
+                        code >= 200 && code < 400,
+                        Detail("HTTP " + code, bypass),
+                        watch.ElapsedMilliseconds);
                 }
-                catch (Exception ex)
+            }
+            catch (WebException ex)
+            {
+                watch.Stop();
+                HttpWebResponse response = ex.Response as HttpWebResponse;
+                if (response != null)
                 {
-                    watch.Stop();
-                    report.Results.Add(new ConnectionTestResult(
-                        url, false, ex.GetType().Name + ": " + ex.Message,
-                        watch.ElapsedMilliseconds));
+                    int code = (int)response.StatusCode;
+                    response.Dispose();
+                    return new ConnectionTestResult(
+                        url,
+                        code >= 200 && code < 400,
+                        Detail("HTTP " + code + " (WebException)", bypass),
+                        watch.ElapsedMilliseconds);
                 }
+                return new ConnectionTestResult(
+                    url, false, "Ошибка: " + ex.Status,
+                    watch.ElapsedMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                watch.Stop();
+                return new ConnectionTestResult(
+                    url, false, ex.GetType().Name + ": " + ex.Message,
+                    watch.ElapsedMilliseconds);
             }
         }
 
@@ -242,8 +260,7 @@ namespace ZapretControl
         {
             try
             {
-                ServicePointManager.SecurityProtocol =
-                    SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
             }
             catch (Exception)
             {

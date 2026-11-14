@@ -21,7 +21,7 @@ jobs:
         shell: powershell
         run: |
           $tag = $env:GITHUB_REF_NAME
-          if (-not $tag) { $tag = 'v1.2.0' }
+          if (-not $tag) { $tag = 'v1.2.1' }
           $version = $tag.TrimStart('v')
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Tag must look like v1.2.3, got $tag"

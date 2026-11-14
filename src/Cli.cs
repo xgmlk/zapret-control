@@ -17,7 +17,7 @@ namespace ZapretControl
             "--set-game-filter=<mode>|--ipset-status|--set-ipset=<state>|" +
             "--update-ipset|--fakes|--replace-fake=<kind> --file=<name>|" +
             "--hosts-check|--hosts-apply|--clear-discord-cache|--diagnostics|" +
-            "--test=<standard|dpi>|--update-check|--update-payload|--update-app|" +
+            "--test=<standard|dpi>|--youtube-probe|--update-check|--update-payload|--update-app|" +
             "--rollback-payload";
 
         private static int Main(string[] args)
@@ -146,6 +146,10 @@ namespace ZapretControl
                 {
                     return RunTests(
                         commandRaw.Substring("--test=".Length).ToLowerInvariant());
+                }
+                if (command == "--youtube-probe")
+                {
+                    return ProbeYouTube();
                 }
                 if (command == "--update-check")
                 {
@@ -483,7 +487,19 @@ namespace ZapretControl
             ServiceInstallResult result = ServiceManager.Install(root, strategy, start, iface);
             Console.WriteLine("strategy=" + result.StrategyName);
             Console.WriteLine("started=" + (result.Started ? "true" : "false"));
+            Console.WriteLine("service_running=" + (result.ServiceRunning ? "true" : "false"));
+            Console.WriteLine("rolled_back=" + (result.RolledBack ? "true" : "false"));
             Console.WriteLine("command=" + result.CommandLine);
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                Console.Error.WriteLine("detail=" + result.Error.Replace(
+                    "\r\n", " | ").Replace('\n', ' ').Replace('\r', ' '));
+            }
+            if (start && !result.Started)
+            {
+                Console.Error.WriteLine("error=service_start_failed");
+                return 5;
+            }
             return 0;
         }
 
@@ -601,7 +617,19 @@ namespace ZapretControl
                     iface = status.ActiveIndex;
                 }
                 bool wasRunning = ZapretService.GetStatus().State == ZapretState.Running;
-                ServiceManager.Install(root, strategy, wasRunning, iface);
+                ServiceInstallResult result = ServiceManager.Install(
+                    root, strategy, wasRunning, iface);
+                Console.WriteLine("started=" + (result.Started ? "true" : "false"));
+                Console.WriteLine("service_running=" +
+                    (result.ServiceRunning ? "true" : "false"));
+                Console.WriteLine("rolled_back=" + (result.RolledBack ? "true" : "false"));
+                if (!string.IsNullOrEmpty(result.Error))
+                {
+                    Console.Error.WriteLine("detail=" + result.Error.Replace(
+                        "\r\n", " | ").Replace('\n', ' ').Replace('\r', ' '));
+                    Console.WriteLine("applied=false");
+                    return 5;
+                }
                 Console.WriteLine("applied=true");
             }
             Console.WriteLine("mode=" + game.Mode);
@@ -771,6 +799,22 @@ namespace ZapretControl
             }
             Console.WriteLine("passed=" + report.Passed + "/" + report.Results.Count);
             return report.Passed == report.Results.Count ? 0 : 1;
+        }
+
+        private static int ProbeYouTube()
+        {
+            YouTubeProbeResult result = YouTubeProbe.Run(15000, 3);
+            Console.WriteLine("page=" + (result.PageOk ? "OK" : "FAIL"));
+            Console.WriteLine("page_detail=" + result.PageDetail);
+            Console.WriteLine("player=" + (result.PlayerOk ? "OK" : "FAIL"));
+            Console.WriteLine("player_detail=" + result.PlayerDetail);
+            Console.WriteLine("video=" + (result.CdnOk ? "OK" : "FAIL"));
+            Console.WriteLine("video_detail=" + result.CdnDetail);
+            Console.WriteLine("attempts=" + result.Attempts);
+            Console.WriteLine("successes=" + result.Successes);
+            Console.WriteLine("bytes=" + result.Bytes);
+            Console.WriteLine("elapsed_ms=" + result.ElapsedMs);
+            return result.CdnOk ? 0 : 1;
         }
 
         private static int CheckUpdates()
@@ -1132,6 +1176,13 @@ namespace ZapretControl
                 Console.Error.WriteLine("selftest failed: StrategyParser.ExpandVariables: " + expanded);
                 return 1;
             }
+            string unescaped = StrategyParser.ExpandVariables(
+                "--dpi-desync-fake-tls=^! --x=^^ \"a^b\"", @"C:\z", game);
+            if (unescaped != "--dpi-desync-fake-tls=! --x=^ \"a^b\"")
+            {
+                Console.Error.WriteLine("selftest failed: StrategyParser.UnescapeCarets: " + unescaped);
+                return 1;
+            }
             if (StrategyParser.NaturalCompare("general (ALT2)", "general (ALT10)") >= 0)
             {
                 Console.Error.WriteLine("selftest failed: natural strategy sort");
@@ -1150,6 +1201,47 @@ namespace ZapretControl
                 ordered[3].Name != "general (ALT2)")
             {
                 Console.Error.WriteLine("selftest failed: strategy advisor order");
+                return 1;
+            }
+            if (new StrategyAdviceOptions().MaxCandidates != 0)
+            {
+                Console.Error.WriteLine("selftest failed: strategy advisor pool limit");
+                return 1;
+            }
+            string playerJson = YouTubeProbe.ExtractPlayerResponse(
+                "<script>var ytInitialPlayerResponse = " +
+                "{\"playabilityStatus\":{\"status\":\"OK\"}," +
+                "\"text\":\"}\"};</script>");
+            if (playerJson == null || playerJson.IndexOf("\"OK\"", StringComparison.Ordinal) < 0)
+            {
+                Console.Error.WriteLine("selftest failed: YouTube player response parsing");
+                return 1;
+            }
+            List<StrategyProbeResult> ranked = new List<StrategyProbeResult>();
+            ranked.Add(new StrategyProbeResult(
+                "pages", "C:\\z\\p.bat", true, true, true, false, 0, 3, true, 100, ""));
+            ranked.Add(new StrategyProbeResult(
+                "video", "C:\\z\\v.bat", true, true, true, true, 2, 3, false, 100, ""));
+            ranked.Add(new StrategyProbeResult(
+                "full", "C:\\z\\f.bat", true, true, true, true, 3, 3, true, 100, ""));
+            StrategyAdvisor.SortResults(ranked);
+            if (ranked[0].Name != "full" ||
+                ranked[1].Name != "video" ||
+                ranked[2].Name != "pages")
+            {
+                Console.Error.WriteLine("selftest failed: strategy advisor ranking");
+                return 1;
+            }
+            if (new SettingsData().FirstRunCompleted)
+            {
+                Console.Error.WriteLine("selftest failed: FirstRunCompleted default");
+                return 1;
+            }
+            if (!ServiceManager.CanRollback(true, "C:\\z\\winws.exe") ||
+                ServiceManager.CanRollback(false, "C:\\z\\winws.exe") ||
+                ServiceManager.CanRollback(true, string.Empty))
+            {
+                Console.Error.WriteLine("selftest failed: ServiceManager.CanRollback");
                 return 1;
             }
             if (!new SettingsData().AutoUpdatePayload)

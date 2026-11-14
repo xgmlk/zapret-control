@@ -16,9 +16,13 @@ payload Flowseal и само приложение (`release.json`).
 - Служба `zapret`: установка, удаление, статус, PID `winws.exe`, запуск/остановка.
 - Выбор любой стратегии `*.bat` из payload и пересоздание `ImagePath` без
   `service.bat`; `--wf-iface` сохраняется.
-- Подбор рабочей стратегии: приложение по очереди запускает кандидатов,
-  проверяет Discord/YouTube/Google и предлагает рабочий вариант; доступно на
-  главной и в установщике.
+- Подбор рабочей стратегии: приложение по очереди запускает всех кандидатов,
+  проверяет Discord, страницу YouTube, плеер и реальный фрагмент видео с
+  `googlevideo`, возвращает ранжированный список с результатами по каждому
+  сервису; пользователь выбирает вариант сам. Доступно на главной, при первом
+  запуске и в установщике.
+- Применение стратегии проверяет фактическое состояние службы и откатывается
+  на предыдущую стратегию, если новая не перешла в `Running`.
 - Определение активного интерфейса Wi-Fi/Ethernet и нативное обновление
   `--wf-iface` в `ImagePath` и активной стратегии `.bat`.
 - Вкладки: «Главная», «Служба», «Игры», «IPSet», «Фейки», «Обновления»,
@@ -28,7 +32,8 @@ payload Flowseal и само приложение (`release.json`).
 - Замена активных фейков с SHA256 и бэкапом.
 - Обновление hosts управляемым блоком и очистка кэша Discord.
 - Диагностика (BFE, прокси, TCP timestamps, конфликтующие программы, hosts,
-  VPN, DoH, интерфейс, задача) и нативные TCP/TLS/DPI-тесты.
+  VPN, DoH, интерфейс, задача) и нативные TCP/TLS/DPI-тесты, включая фрагмент
+  видео YouTube.
 - Два канала обновлений: Flowseal payload и `ZapretControl.Setup.exe`.
   Манифест `release.json`, SHA256, Authenticode, staging/backup/rollback,
   сохранение пользовательских списков, Game Filter и активных фейков.
@@ -41,13 +46,15 @@ payload Flowseal и само приложение (`release.json`).
 1. Откройте GitHub Releases проекта.
 2. Скачайте `ZapretControl.Setup.exe`.
 3. Запустите установщик и подтвердите UAC.
-4. Выберите стратегию (по умолчанию `general.bat`) или включите
-   «Подобрать рабочую стратегию после установки» — установщик проверит
-   несколько кандидатов и применит лучший. При необходимости снимите галочки
-   службы/задачи/ярлыков.
+4. Выберите стратегию или оставьте «Автоматически»: по умолчанию включена
+   галочка «Подобрать рабочую стратегию после установки» — установщик проверит
+   расширенный пул и применит лучший полностью рабочий вариант с видео
+   YouTube; если такого нет, останется выбранная стратегия, а GUI предложит
+   проверить снова. При необходимости снимите галочки службы/задачи/ярлыков.
 5. Нажмите «Установить». Установщик скачает Flowseal 1.10.4, проверит SHA256,
    установит приложение в `%ProgramFiles%\ZapretControl`, создаст службу
-   `zapret`, задачу `Zapret-IfIndex-Sync` и запустит GUI.
+   `zapret`, задачу `Zapret-IfIndex-Sync` и запустит GUI. При первом запуске
+   GUI сам предложит подобрать стратегию, если автоподбор не выполнялся.
 
 Требования: Windows 10/11 x64, .NET Framework 4.x, права администратора,
 доступ к GitHub. На чистой машине ничего дополнительно ставить не нужно.
@@ -91,7 +98,7 @@ ZapretControl.Setup.exe --selftest
 
 | Вкладка | Что делает |
 |---|---|
-| Главная | toggle защиты, статус/PID, активный интерфейс, «Обновить», выбор и подбор стратегии, быстрая проверка с итогом |
+| Главная | toggle защиты, статус/PID, активный интерфейс, «Обновить», выбор и подбор стратегии, быстрая проверка (DPI + видео YouTube + hosts) с итогом |
 | Служба | статус, стратегия, автозагрузка, остановка/запуск и перезапуск защиты, автосинхронизация, payload; пересоздание и удаление — в «Дополнительно» |
 | Игры | Game Filter: disabled/all/tcp/udp, диапазоны портов, сохранение и применение |
 | IPSet | loaded/none/any, обновление `ipset-all.txt`, резервная копия |
@@ -111,8 +118,8 @@ ZapretControl.Setup.exe --selftest
 {
   "schema": 1,
   "app": {
-    "version": "1.2.0",
-    "setup_url": "https://github.com/OWNER/REPO/releases/download/v1.2.0/ZapretControl.Setup.exe",
+    "version": "1.2.1",
+    "setup_url": "https://github.com/OWNER/REPO/releases/download/v1.2.1/ZapretControl.Setup.exe",
     "sha256": "...",
     "signer_thumbprint": "..."
   },
@@ -220,19 +227,23 @@ ZapretControl.Cli.exe --hosts-check | --hosts-apply
 ZapretControl.Cli.exe --clear-discord-cache
 ZapretControl.Cli.exe --diagnostics
 ZapretControl.Cli.exe --test=standard|dpi
+ZapretControl.Cli.exe --youtube-probe
 ZapretControl.Cli.exe --update-check
 ZapretControl.Cli.exe --update-payload | --update-app | --rollback-payload
 ```
 
 Вывод — `key=value`; машинные значения английские, `*_display` — русские.
 Ошибки пишутся в stderr как `error=...`. Команды, меняющие службу, payload,
-hosts, задачу и настройки, требуют прав администратора.
+hosts, задачу и настройки, требуют прав администратора. `--youtube-probe`
+проверяет страницу, player response и три фрагмента видео с `googlevideo` и
+возвращает 0, только если медиа реально скачивается.
 
 Коды `--status`: 0 Running, 1 Stopped, 2 переходное/неизвестное, 3 не
 установлена, 4 нет прав, 64 неверные аргументы. `--iface`: 0 совпадает,
 1 нужно обновить, 2 нет данных. `--sync-iface`: 0 успех, 1 расхождение
 осталось, 3 admin, 4 не найдено, 5 access denied, 6 timeout, 7 ошибка,
-64 аргументы.
+64 аргументы. `--install-service` возвращает 5, если служба не перешла в
+`Running`; при наличии предыдущей стратегии она восстанавливается.
 
 ## Как это работает
 
@@ -241,7 +252,8 @@ hosts, задачу и настройки, требуют прав админи�
 - `ServiceManager` + `NativeService` + `StrategyParser` — нативные
   install/remove/status, `CreateService` через `advapi32`, разбор `.bat`,
   подстановка `%BIN%`, `%LISTS%`, `%GameFilterTCP%`, `%GameFilterUDP%`,
-  проверка path traversal/reparse, запись стратегии в реестр.
+  проверка path traversal/reparse, запись стратегии в реестр, проверка
+  фактического `Running` и откат на предыдущую стратегию при сбое запуска.
 - `IfaceStatus` — маршруты `0.0.0.0/0` по эффективной метрике, выбор
   Wi-Fi/Ethernet, чтение/запись `--wf-iface`, бэкап стратегии.
 - `SyncTask` — задача `Zapret-IfIndex-Sync`, запускает установленный CLI от
@@ -250,13 +262,20 @@ hosts, задачу и настройки, требуют прав админи�
   staging, backup, атомарная замена, сохранение пользовательских файлов,
   откат, обрезка старых копий.
 - `IpsetManager`, `FakesManager`, `HostsManager`, `DiscordCache`,
-  `Diagnostics`, `ConnectionTests` — функции `service.bat` без bat/PowerShell.
+  `Diagnostics`, `ConnectionTests`, `YouTubeProbe` — функции `service.bat` без
+  bat/PowerShell; `YouTubeProbe` разбирает player response, `YouTubeHttp`
+  скачивает фрагменты `googlevideo`, `ConnectionTests` включает его в DPI-тест.
+- `StrategyAdvisor` — запускает временный `winws.exe`, проверяет Discord,
+  страницу/плеер/видео YouTube и Google, сортирует полные и частичные
+  результаты; `HomeTab` показывает их в `StrategyResultsForm`.
 - `UpdateManifest` / `UpdateService` / `SignatureVerifier` — dual-update,
   `release.json`, SHA256, WinVerifyTrust, запуск Setup.
 - `SetupEngine` / `SetupForm` / `SetupProgram` — установка, обновление,
-  восстановление, удаление, UAC, ACL, ярлыки, Uninstall, журнал.
-- `MainForm` и `*Tab` — окно с вкладками; `Program` — самоэлевация и короткие
-  сообщения об ошибках, подробности — в `logs\ui-error.log`.
+  восстановление, удаление, UAC, ACL, ярлыки, Uninstall, журнал; автоподбор
+  стратегии и флаг `FirstRunCompleted`.
+- `MainForm` и `*Tab` — окно с вкладками; `FirstRunForm` предлагает подбор при
+  первом запуске; `Program` — самоэлевация и короткие сообщения об ошибках,
+  подробности — в `logs\ui-error.log`.
 
 ## Безопасность
 

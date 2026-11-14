@@ -319,9 +319,16 @@ namespace ZapretControl
                     }
                     try
                     {
-                        ServiceManager.Install(root, strategyPath, wasRunning, iface);
+                        ServiceInstallResult installResult = ServiceManager.Install(
+                            root, strategyPath, wasRunning, iface);
                         reinstalled = true;
-                        started = wasRunning;
+                        started = installResult.ServiceRunning;
+                        if (!string.IsNullOrEmpty(installResult.Error))
+                        {
+                            warning = string.IsNullOrEmpty(warning)
+                                ? installResult.Error
+                                : warning + " " + installResult.Error;
+                        }
                     }
                     catch (Exception)
                     {
@@ -471,14 +478,20 @@ namespace ZapretControl
 
             bool reinstalled = false;
             bool started = false;
+            string warning = null;
             if (installService)
             {
                 string path = ServiceManager.ChooseDefaultStrategy(root, strategy);
                 if (!string.IsNullOrEmpty(path))
                 {
-                    ServiceManager.Install(root, path, wasRunning, iface);
+                    ServiceInstallResult installResult = ServiceManager.Install(
+                        root, path, wasRunning, iface);
                     reinstalled = true;
-                    started = wasRunning;
+                    started = installResult.ServiceRunning;
+                    if (!string.IsNullOrEmpty(installResult.Error))
+                    {
+                        warning = installResult.Error;
+                    }
                 }
             }
             return new PayloadUpdateResult(
@@ -490,7 +503,7 @@ namespace ZapretControl
                 started,
                 true,
                 true,
-                null);
+                warning);
         }
 
         public static void PruneBackups(string root)

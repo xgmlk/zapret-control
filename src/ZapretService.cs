@@ -84,10 +84,26 @@ namespace ZapretControl
             using (ServiceController sc = new ServiceController(ServiceName))
             {
                 ServiceControllerStatus status = sc.Status;
-                if (status == ServiceControllerStatus.Running ||
-                    status == ServiceControllerStatus.StartPending)
+                if (status == ServiceControllerStatus.Running)
                 {
                     return;
+                }
+                if (status == ServiceControllerStatus.StartPending)
+                {
+                    // Never report success for a service that is only queued:
+                    // wait for the SCM transition and let the caller log timeout.
+                    sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(25));
+                    return;
+                }
+                if (status == ServiceControllerStatus.StopPending)
+                {
+                    sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(25));
+                    status = sc.Status;
+                }
+                if (status != ServiceControllerStatus.Stopped)
+                {
+                    throw new InvalidOperationException(
+                        "Служба находится в состоянии " + status + ".");
                 }
                 sc.Start();
                 sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(25));

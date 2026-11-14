@@ -103,7 +103,7 @@ namespace ZapretControl
                 "Segoe UI", 10.5F, System.Drawing.FontStyle.Bold);
             _checkButton = AddButton(
                 checkCard, "Проверить всё", 492, 28, 150, 30, OnCheck);
-            _checkButton.AccessibleName = "Проверить соединения и hosts";
+            _checkButton.AccessibleName = "Проверить соединения, видео YouTube и hosts";
             _detailsButton = AddButton(
                 checkCard, "Подробнее", 652, 28, 180, 30, OnDetails);
             _detailsButton.AccessibleName = "Подробный отчёт на вкладке Тесты";
@@ -438,6 +438,7 @@ namespace ZapretControl
             SetState(_advice, "Применяю стратегию " + strategy + "…", AmberColor);
 
             Exception error = null;
+            ServiceInstallResult result = null;
             try
             {
                 await Task.Run(delegate
@@ -448,7 +449,7 @@ namespace ZapretControl
                     {
                         iface = status.ActiveIndex;
                     }
-                    ServiceManager.Install(root, path, true, iface);
+                    result = ServiceManager.Install(root, path, true, iface);
                 });
             }
             catch (Exception ex)
@@ -472,21 +473,90 @@ namespace ZapretControl
                 SetState(_advice, "Ошибка: " + ShortError(error), RedColor);
                 ShowError("Не удалось применить стратегию", error);
             }
+            else if (result == null)
+            {
+                SetState(_advice, "Применение не вернуло результат.", RedColor);
+            }
+            else if (result.Started)
+            {
+                string pid = result.WinwsPid > 0
+                    ? " · winws.exe PID " + result.WinwsPid
+                    : string.Empty;
+                SetState(
+                    _advice,
+                    "Стратегия применена: " + result.StrategyName +
+                    ". Служба работает" + pid + ".",
+                    GreenColor);
+            }
+            else if (!string.IsNullOrEmpty(result.Error))
+            {
+                if (result.RolledBack)
+                {
+                    string text = "Стратегия \"" + strategy + "\" не запустилась. " +
+                        "Восстановлена предыдущая: " +
+                        (string.IsNullOrEmpty(result.PreviousStrategyName)
+                            ? "без имени"
+                            : result.PreviousStrategyName) + ".";
+                    text += result.PreviousRunning && result.ServiceRunning
+                        ? " Защита работает."
+                        : " Защита остановлена.";
+                    SetState(_advice, text, result.ServiceRunning ? AmberColor : RedColor);
+                    MessageBox.Show(
+                        this,
+                        text + "\n\n" + result.Error,
+                        "Служба не запустилась",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+                else
+                {
+                    string text = "Стратегия \"" + strategy + "\" не запустилась.";
+                    SetState(_advice, text, RedColor);
+                    MessageBox.Show(
+                        this,
+                        text + "\n\n" + result.Error,
+                        "Служба не запустилась",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+            }
+            else if (!result.StartRequested)
+            {
+                SetState(
+                    _advice,
+                    "Стратегия выбрана: " + result.StrategyName + ".",
+                    GreenColor);
+            }
             else
             {
-                SetState(_advice, "Стратегия применена: " + strategy + ".", GreenColor);
+                string text = "Стратегия \"" + strategy + "\" не запустилась.";
+                SetState(_advice, text, RedColor);
+                MessageBox.Show(
+                    this,
+                    text + "\n\nСостояние службы: " + result.StatusText,
+                    "Служба не запустилась",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
         }
 
-        private async void OnAdvise(object sender, EventArgs e)
+        private void OnAdvise(object sender, EventArgs e)
+        {
+            StartAdvice(true);
+        }
+
+        // Reusable entry point for the home button and the first-run prompt.
+        // The first-run prompt already asks for consent, so it calls this with
+        // confirm=false.
+        public async void StartAdvice(bool confirm)
         {
             if (_busy)
             {
                 return;
             }
-            if (!Confirm(
+            if (confirm && !Confirm(
                 "Подобрать рабочую стратегию?\n" +
-                "Проверка займёт 1–2 минуты и временно прервёт защиту."))
+                "Проверка займёт 1–3 минуты и временно прервёт защиту."))
             {
                 return;
             }
@@ -498,7 +568,7 @@ namespace ZapretControl
             _generation++;
             SetBusy(true);
             SetState(_status, "Подбираю стратегию…", AmberColor);
-            _detail.Text = "Проверяю доступ к Discord, YouTube и Google.";
+            _detail.Text = "Проверяю Discord, YouTube (страница, плеер, видео) и Google.";
             SetState(_advice, "Подбираю стратегию…", AmberColor);
 
             StrategyAdviceReport report = null;
@@ -540,41 +610,81 @@ namespace ZapretControl
                 SetState(_advice, "Подбор не вернул результат.", RedColor);
                 return;
             }
-            string restoreWarning = report.ServiceWasRunning && !report.ServiceRestored
-                ? " Служба не вернулась после проверки."
-                : string.Empty;
-            if (!string.IsNullOrEmpty(report.RecommendedName))
-            {
-                SelectStrategy(report.RecommendedName);
-                _selectionDirty = true;
-                string text = "Рекомендация: " + report.RecommendedName +
-                    " (" + report.RecommendedPassed + " из " +
-                    report.RecommendedTotal + ")." + restoreWarning;
-                SetState(_advice, text, GreenColor);
-                if (Confirm(text + "\nПрименить и запустить защиту?"))
-                {
-                    await ApplyStrategy(report.RecommendedName, false);
-                }
-                else
-                {
-                    SetState(_advice,
-                        text + " Нажмите «Применить», чтобы использовать.",
-                        AmberColor);
-                }
-            }
-            else
+            if (report.Results.Count == 0)
             {
                 string text = string.IsNullOrEmpty(report.Error)
-                    ? "Рабочая стратегия не найдена."
+                    ? "Не удалось проверить стратегии."
                     : report.Error;
-                if (!string.IsNullOrEmpty(report.BestName))
-                {
-                    text += " Лучший результат: " + report.BestName +
-                        " (" + report.BestPassed + " из " + report.BestTotal + ").";
-                }
-                text += restoreWarning;
                 SetState(_advice, text, RedColor);
                 ShowInfo(text);
+                return;
+            }
+
+            string restoreWarning = report.ServiceWasRunning && !report.ServiceRestored
+                ? "Служба не вернулась после проверки — включите защиту вручную."
+                : string.Empty;
+            StrategyProbeResult selected;
+            using (StrategyResultsForm form = new StrategyResultsForm(report))
+            {
+                form.ShowDialog(this);
+                if (IsDisposed || Disposing)
+                {
+                    return;
+                }
+                selected = form.SelectedResult;
+            }
+            if (selected == null)
+            {
+                string summary = report.HasRecommendation
+                    ? "Лучший результат: " + report.RecommendedName + " (" +
+                      report.RecommendedPassed + " из " + report.RecommendedTotal + ")."
+                    : (report.HasPartial
+                        ? "Полностью работающих нет, лучший частичный: " +
+                          report.BestName + " (" + report.BestPassed + " из " +
+                          report.BestTotal + ")."
+                        : "Рабочих стратегий не найдено.");
+                if (!string.IsNullOrEmpty(restoreWarning))
+                {
+                    summary += " " + restoreWarning;
+                }
+                SetState(
+                    _advice, summary, report.HasRecommendation ? GreenColor : AmberColor);
+                return;
+            }
+
+            SelectStrategy(selected.Name);
+            _selectionDirty = true;
+            string question = selected.Ok
+                ? "Применить стратегию \"" + selected.Name + "\" и запустить защиту?"
+                : "Стратегия \"" + selected.Name + "\" " +
+                  (selected.PartiallyOk ? "работает частично" : "не прошла проверку") +
+                  " (" + selected.Passed + " из " + selected.Total + ").\n" +
+                  selected.Detail + "\n\nВсё равно применить её?";
+            if (!string.IsNullOrEmpty(restoreWarning))
+            {
+                question += "\n\n" + restoreWarning;
+            }
+            if (!Confirm(question))
+            {
+                SetState(
+                    _advice,
+                    "Выбрана: " + selected.Name + ". Нажмите «Применить».",
+                    selected.Ok ? GreenColor : AmberColor);
+                return;
+            }
+            await ApplyStrategy(selected.Name, false);
+        }
+
+        public void StartManualSelection()
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            _strategy.Focus();
+            if (_strategy.Items.Count > 0)
+            {
+                _strategy.DroppedDown = true;
             }
         }
 
@@ -611,7 +721,7 @@ namespace ZapretControl
             }
             _generation++;
             SetBusy(true);
-            SetState(_checkSummary, "Проверяю соединения и hosts…", AmberColor);
+            SetState(_checkSummary, "Проверяю соединения, видео YouTube и hosts…", AmberColor);
 
             HomeCheckReport report = null;
             Exception error = null;

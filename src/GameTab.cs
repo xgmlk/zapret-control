@@ -256,10 +256,28 @@ namespace ZapretControl
                 {
                     iface = ifaceStatus.ActiveIndex;
                 }
+                ServiceInstallResult result = null;
                 await Task.Run(delegate
                 {
-                    ServiceManager.Install(_payload, path, wasRunning, iface);
+                    result = ServiceManager.Install(_payload, path, wasRunning, iface);
                 });
+                if (result != null && !string.IsNullOrEmpty(result.Error))
+                {
+                    string text = result.RolledBack
+                        ? "Game Filter применён, но служба не запустилась. " +
+                          "Восстановлена предыдущая стратегия: " +
+                          (string.IsNullOrEmpty(result.PreviousStrategyName)
+                              ? "без имени"
+                              : result.PreviousStrategyName) + "."
+                        : "Game Filter применён, но служба не запустилась.";
+                    MessageBox.Show(
+                        this,
+                        text + "\n\n" + result.Error,
+                        "Zapret Control",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
                 ShowInfo("Game Filter применён, служба пересоздана.");
             }
             catch (Exception ex)

@@ -17,6 +17,7 @@ namespace ZapretControl
         public string InstallDate { get; set; }
         public bool RegisterSyncTask { get; set; }
         public string UpdateSignerThumbprint { get; set; }
+        public bool FirstRunCompleted { get; set; }
 
         public SettingsData()
         {
@@ -30,6 +31,7 @@ namespace ZapretControl
             InstallDate = string.Empty;
             RegisterSyncTask = true;
             UpdateSignerThumbprint = string.Empty;
+            FirstRunCompleted = false;
         }
     }
 
@@ -117,11 +119,20 @@ namespace ZapretControl
                     return defaults;
                 }
                 string json = File.ReadAllText(path, Encoding.UTF8);
+                bool hasFirstRunField = json.IndexOf(
+                    "\"FirstRunCompleted\"", StringComparison.OrdinalIgnoreCase) >= 0;
                 JavaScriptSerializer serializer = new JavaScriptSerializer();
                 SettingsData data = serializer.Deserialize<SettingsData>(json);
                 if (data == null)
                 {
                     return defaults;
+                }
+                // Settings written before FirstRunCompleted existed belong to
+                // an existing installation: updating must not look like a
+                // first launch. A fresh install writes the field explicitly.
+                if (!hasFirstRunField && !string.IsNullOrEmpty(data.InstalledVersion))
+                {
+                    data.FirstRunCompleted = true;
                 }
                 if (string.IsNullOrEmpty(data.ManifestUrl))
                 {

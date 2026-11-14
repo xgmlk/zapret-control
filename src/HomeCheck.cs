@@ -64,7 +64,7 @@ namespace ZapretControl
         public string ToText()
         {
             StringBuilder builder = new StringBuilder();
-            builder.AppendLine("Zapret Control — быстрая проверка (DPI + hosts), " +
+            builder.AppendLine("Zapret Control — быстрая проверка (DPI + видео + hosts), " +
                                StartedAt.ToString("yyyy-MM-dd HH:mm:ss"));
             foreach (ConnectionTestResult result in Tests.Results)
             {

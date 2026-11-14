@@ -69,11 +69,14 @@ namespace ZapretControl
             bool wasRunning = ZapretService.GetStatus().State == ZapretState.Running;
             bool hadService = NativeService.Exists(AppInfo.ServiceName);
             string previousPayload = AppPaths.GetServicePayloadRoot();
+            bool hadSettingsFile = File.Exists(AppPaths.SettingsPath);
             string strategy = value.Strategy;
             if (string.IsNullOrEmpty(strategy))
             {
                 strategy = ServiceManager.GetCurrentStrategyName();
             }
+            bool autoPicked = false;
+            bool autoPickedStarted = false;
 
             WriteApplicationFiles(target, log);
             AcquirePayload(value, target, log);
@@ -88,7 +91,8 @@ namespace ZapretControl
             if (value.InstallService)
             {
                 string strategyPath = ChooseStrategyPath(
-                    payload, strategy, value.AutoPickStrategy, value.Silent, log);
+                    payload, strategy, value.AutoPickStrategy, value.Silent, log,
+                    out autoPicked);
                 if (string.IsNullOrEmpty(strategyPath))
                 {
                     throw new InvalidOperationException(
@@ -104,12 +108,18 @@ namespace ZapretControl
                 ServiceInstallResult result = ServiceManager.Install(
                     payload, strategyPath, start, iface);
                 strategy = result.StrategyName;
+                autoPickedStarted = autoPicked && result.Started;
                 Log(log, "Служба zapret: стратегия " + result.StrategyName +
                          ", запуск " + (result.Started ? "да" : "нет") + ".");
-                if (!result.Started)
+                if (result.RolledBack)
+                {
+                    Log(log, "Стратегия не запустилась, восстановлена предыдущая: " +
+                             result.PreviousStrategyName + ".");
+                }
+                if (start && !result.Started)
                 {
                     Log(log, "Предупреждение: служба создана, но не запустилась. " +
-                             "Проверьте журнал Windows и вкладку «Главная».");
+                             result.Error);
                 }
             }
             else if (hadService && !string.IsNullOrEmpty(previousPayload) &&
@@ -119,7 +129,14 @@ namespace ZapretControl
             }
 
             AclInstaller.ApplyInstallAcls(target, payload, AppPaths.DataDirectory);
-            SaveSettings(target, strategy, value.RegisterTask && value.InstallService);
+            bool firstRunCompleted = autoPickedStarted;
+            if (!firstRunCompleted && hadSettingsFile)
+            {
+                firstRunCompleted = Settings.Load().FirstRunCompleted;
+            }
+            SaveSettings(
+                target, strategy, value.RegisterTask && value.InstallService,
+                firstRunCompleted);
             if (value.RegisterTask && value.InstallService)
             {
                 RegisterTask(log);
@@ -189,10 +206,13 @@ namespace ZapretControl
                 {
                     strategy = ServiceManager.GetCurrentStrategyName();
                 }
+                bool autoPicked = false;
+                ServiceInstallResult serviceResult = null;
                 if (value.InstallService)
                 {
                     string strategyPath = ChooseStrategyPath(
-                        payload, strategy, value.AutoPickStrategy, value.Silent, log);
+                        payload, strategy, value.AutoPickStrategy, value.Silent, log,
+                        out autoPicked);
                     if (string.IsNullOrEmpty(strategyPath))
                     {
                         throw new InvalidOperationException(
@@ -204,17 +224,30 @@ namespace ZapretControl
                     {
                         iface = ifaceStatus.ActiveIndex;
                     }
-                    ServiceInstallResult serviceResult = ServiceManager.Install(
+                    serviceResult = ServiceManager.Install(
                         payload, strategyPath, wasRunning || value.StartService, iface);
-                    strategy = System.IO.Path.GetFileNameWithoutExtension(strategyPath);
-                    if (!serviceResult.Started)
+                    strategy = serviceResult.StrategyName;
+                    if (serviceResult.RolledBack)
                     {
-                        Log(log, "Предупреждение: служба создана, но не запустилась.");
+                        Log(log, "Стратегия не запустилась, восстановлена предыдущая: " +
+                                 serviceResult.PreviousStrategyName + ".");
+                    }
+                    if ((wasRunning || value.StartService) && !serviceResult.Started)
+                    {
+                        Log(log, "Предупреждение: служба создана, но не запустилась. " +
+                                 serviceResult.Error);
                     }
                 }
 
                 AclInstaller.ApplyInstallAcls(target, payload, AppPaths.DataDirectory);
-                SaveSettings(target, strategy, value.RegisterTask && value.InstallService);
+                bool firstRunCompleted = Settings.Load().FirstRunCompleted;
+                if (autoPicked && serviceResult != null && serviceResult.Started)
+                {
+                    firstRunCompleted = true;
+                }
+                SaveSettings(
+                    target, strategy, value.RegisterTask && value.InstallService,
+                    firstRunCompleted);
                 if (value.RegisterTask && value.InstallService)
                 {
                     RegisterTask(log);
@@ -359,9 +392,10 @@ namespace ZapretControl
             }
             messages.Add("game_filter=OK");
 
-            if (!new SettingsData().AutoUpdatePayload)
+            if (!new SettingsData().AutoUpdatePayload ||
+                new SettingsData().FirstRunCompleted)
             {
-                throw new InvalidOperationException("SettingsData.AutoUpdatePayload");
+                throw new InvalidOperationException("SettingsData defaults");
             }
             messages.Add("settings=OK");
 
@@ -406,8 +440,10 @@ namespace ZapretControl
             string preferred,
             bool autoPick,
             bool silent,
-            Action<string> log)
+            Action<string> log,
+            out bool autoPicked)
         {
+            autoPicked = false;
             string path = ServiceManager.ChooseDefaultStrategy(payload, preferred);
             if (string.IsNullOrEmpty(path) || !autoPick || silent)
             {
@@ -415,7 +451,12 @@ namespace ZapretControl
             }
             string picked = AutoPickStrategy(
                 payload, System.IO.Path.GetFileNameWithoutExtension(path), log);
-            return string.IsNullOrEmpty(picked) ? path : picked;
+            if (string.IsNullOrEmpty(picked))
+            {
+                return path;
+            }
+            autoPicked = true;
+            return picked;
         }
 
         private static string AutoPickStrategy(
@@ -428,8 +469,7 @@ namespace ZapretControl
                     payload,
                     new StrategyAdviceOptions
                     {
-                        Preferred = preferred,
-                        MaxCandidates = 5
+                        Preferred = preferred
                     },
                     delegate(string message)
                     {
@@ -437,11 +477,14 @@ namespace ZapretControl
                     });
                 if (!string.IsNullOrEmpty(report.RecommendedPath))
                 {
-                    Log(log, "Рекомендована стратегия " + report.RecommendedName + ".");
+                    Log(log, "Рекомендована стратегия " + report.RecommendedName +
+                             " (" + report.RecommendedPassed + " из " +
+                             report.RecommendedTotal + ").");
                     return report.RecommendedPath;
                 }
                 Log(log, string.IsNullOrEmpty(report.Error)
-                    ? "Рабочая стратегия не найдена; используется " + preferred + "."
+                    ? "Полностью рабочая стратегия не найдена; используется " +
+                      preferred + "."
                     : report.Error);
             }
             catch (Exception ex)
@@ -596,7 +639,8 @@ namespace ZapretControl
             }
         }
 
-        private static void SaveSettings(string target, string strategy, bool registerTask)
+        private static void SaveSettings(
+            string target, string strategy, bool registerTask, bool firstRunCompleted)
         {
             SettingsData settings = Settings.Load();
             settings.PayloadRoot = AppPaths.TargetPayloadDirectory;
@@ -607,6 +651,7 @@ namespace ZapretControl
             settings.InstalledVersion = AppInfo.Version;
             settings.InstallDate = DateTime.Now.ToString("yyyy-MM-dd");
             settings.RegisterSyncTask = registerTask;
+            settings.FirstRunCompleted = firstRunCompleted;
             Settings.Save();
         }
 

@@ -518,6 +518,7 @@ namespace ZapretControl
             text = ReplaceIgnoreCase(text, "%GameFilterUDP%", game.EffectiveUdp);
             text = ReplaceIgnoreCase(text, "%GameFilter%", game.EffectiveAll);
             text = Environment.ExpandEnvironmentVariables(text);
+            text = UnescapeCarets(text);
 
             Match leftover = Regex.Match(text, @"%[A-Za-z_][A-Za-z0-9_]*%");
             if (leftover.Success)
@@ -541,6 +542,39 @@ namespace ZapretControl
                 index = text.IndexOf(from, index + to.Length, StringComparison.OrdinalIgnoreCase);
             }
             return text;
+        }
+
+        // Batch escapes special characters with a caret (for example
+        // --dpi-desync-fake-tls=^!). The service runs winws directly, so the
+        // caret must be removed or winws tries to open "^!" as a file.
+        internal static string UnescapeCarets(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.IndexOf('^') < 0)
+            {
+                return text;
+            }
+            StringBuilder builder = new StringBuilder(text.Length);
+            bool quoted = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '"')
+                {
+                    quoted = !quoted;
+                    builder.Append(c);
+                    continue;
+                }
+                if (!quoted && c == '^' && i + 1 < text.Length)
+                {
+                    builder.Append(text[i + 1]);
+                    i++;
+                }
+                else
+                {
+                    builder.Append(c);
+                }
+            }
+            return builder.ToString();
         }
 
         // Collapses runs of whitespace outside double quotes only.

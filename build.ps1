@@ -90,7 +90,7 @@ $common = Select-Sources @(
     'ZapretService', 'IfaceStatus', 'NativeService', 'StrategyParser',
     'ServiceManager', 'PayloadManager', 'IpsetManager', 'FakesManager',
     'HostsManager', 'DiscordCache', 'Diagnostics', 'ConnectionTests',
-    'HomeCheck', 'StrategyAdvisor',
+    'YouTubeProbe', 'YouTubeHttp', 'HomeCheck', 'StrategyAdvisor',
     'UpdateManifest', 'UpdateService', 'SignatureVerifier', 'AclInstaller',
     'SyncTask', 'PayloadPin', 'AssemblyInfo'
 )
@@ -98,7 +98,7 @@ $common = Select-Sources @(
 $guiSources = $common + (Select-Sources @(
     'Program', 'MainForm', 'ToggleSwitch', 'TrafficLightButton', 'UiDrawing',
     'HomeTab', 'ServiceTab', 'GameTab', 'IpsetTab', 'FakesTab', 'UpdatesTab',
-    'DiagnosticsTab', 'TestsTab', 'TabView'
+    'DiagnosticsTab', 'TestsTab', 'TabView', 'StrategyResultsForm', 'FirstRunForm'
 ))
 
 $cliSources = $common + (Select-Sources @('Cli'))

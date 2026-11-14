@@ -453,16 +453,58 @@ namespace ZapretControl
             {
                 _currentStrategy = result.StrategyName;
                 SelectStrategy(result.StrategyName);
-                string message = "Стратегия применена: " + result.StrategyName + ".";
                 if (result.Started)
                 {
-                    message += " Защита запущена.";
+                    string pid = result.WinwsPid > 0
+                        ? " · winws.exe PID " + result.WinwsPid
+                        : string.Empty;
+                    ShowInfo("Стратегия применена: " + result.StrategyName +
+                             ". Защита запущена" + pid + ".");
                 }
-                else if (start)
+                else if (!string.IsNullOrEmpty(result.Error))
                 {
-                    message += " Защита не запустилась — проверьте журнал службы Windows.";
+                    if (result.RolledBack)
+                    {
+                        string text = "Стратегия \"" + strategy + "\" не запустилась. " +
+                            "Восстановлена предыдущая: " +
+                            (string.IsNullOrEmpty(result.PreviousStrategyName)
+                                ? "без имени"
+                                : result.PreviousStrategyName) + ".";
+                        text += result.PreviousRunning && result.ServiceRunning
+                            ? " Защита работает."
+                            : " Защита остановлена.";
+                        MessageBox.Show(
+                            this,
+                            text + "\n\n" + result.Error,
+                            "Служба не запустилась",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                    else
+                    {
+                        MessageBox.Show(
+                            this,
+                            "Стратегия \"" + strategy + "\" не запустилась.\n\n" +
+                            result.Error,
+                            "Служба не запустилась",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
                 }
-                ShowInfo(message);
+                else if (!result.StartRequested)
+                {
+                    ShowInfo("Стратегия выбрана: " + result.StrategyName + ".");
+                }
+                else
+                {
+                    MessageBox.Show(
+                        this,
+                        "Стратегия \"" + strategy + "\" не запустилась.\n" +
+                        "Состояние службы: " + result.StatusText,
+                        "Служба не запустилась",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
             }
         }
 

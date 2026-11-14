@@ -23,7 +23,8 @@ namespace ZapretControl
             CardPanel card = AddCard("ПРОВЕРКА СОЕДИНЕНИЙ", 0, 0, 852, 470);
             AddMutedLabel(card,
                 "Стандартные тесты проверяют DNS и TCP 443. DPI-тест делает HTTPS-запросы " +
-                "к Discord, YouTube, Google, Instagram и X через текущий обход.",
+                "к Discord, YouTube, Google, Instagram и X, а затем скачивает фрагмент " +
+                "видео с googlevideo.com через текущий обход.",
                 20, 34, 812, 36);
             _standard = AddButton(card, "Стандартные тесты", 20, 76, 190, 32, OnStandard);
             _dpi = AddButton(card, "DPI-тест", 220, 76, 140, 32, OnDpi);

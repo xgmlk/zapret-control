@@ -77,7 +77,8 @@ namespace ZapretControl
                 top += 36;
 
                 _autoPick = CreateCheck(
-                    "Подобрать рабочую стратегию после установки (1–2 минуты)", top);
+                    "Подобрать рабочую стратегию после установки (1–3 минуты)", top);
+                _strategy.SelectedIndexChanged += OnStrategySelectionChanged;
                 top += 26;
             }
 
@@ -99,7 +100,12 @@ namespace ZapretControl
             _keepData.Checked = _options.KeepData;
             if (_autoPick != null)
             {
-                _autoPick.Checked = _options.AutoPickStrategy;
+                // A fresh interactive install offers the deep check by default;
+                // updates keep the user's existing choice, and silent installs
+                // ask at the first manual GUI start instead.
+                _autoPick.Checked = _mode == "install" &&
+                                    string.IsNullOrEmpty(_options.Strategy);
+                OnStrategySelectionChanged(null, EventArgs.Empty);
             }
             bool uninstall = _mode == "uninstall";
             bool serviceOptions = !uninstall && _mode != "rollback";
@@ -170,9 +176,23 @@ namespace ZapretControl
             return check;
         }
 
+        private void OnStrategySelectionChanged(object sender, EventArgs e)
+        {
+            if (_autoPick == null || _running)
+            {
+                return;
+            }
+            bool automatic = !(_strategy.SelectedItem is StrategyInfo);
+            _autoPick.Enabled = automatic;
+            if (!automatic)
+            {
+                _autoPick.Checked = false;
+            }
+        }
+
         private void PopulateStrategies()
         {
-            _strategy.Items.Add("Автоматически (general.bat)");
+            _strategy.Items.Add("Автоматически (general.bat или подбор)");
             string root = AppPaths.TargetPayloadDirectory;
             if (!AppPaths.IsPayloadRoot(root))
             {
@@ -254,7 +274,8 @@ namespace ZapretControl
             _options.CreateShortcuts = _shortcuts.Checked;
             _options.NoLaunch = !_launch.Checked;
             _options.KeepData = _keepData.Checked;
-            _options.AutoPickStrategy = _autoPick != null && _autoPick.Checked;
+            _options.AutoPickStrategy = _autoPick != null && _autoPick.Checked &&
+                !(_strategy != null && _strategy.SelectedItem is StrategyInfo);
             _options.Silent = false;
 
             Task.Run(delegate
