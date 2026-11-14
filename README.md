@@ -25,6 +25,12 @@ payload Flowseal и само приложение (`release.json`).
   `googlevideo`, возвращает ранжированный список с результатами по каждому
   сервису; пользователь выбирает вариант сам. Доступно на главной, при первом
   запуске и в установщике.
+- Результат подбора сохраняется: кнопка «Последняя проверка» рядом с
+  «Подобрать» открывает дату/время проверки и тот же список стратегий с
+  метками Discord, YouTube, видео и Google. Отчёт хранится в
+  `%ProgramData%\ZapretControl\strategy-report.json` и переживает перезапуск
+  GUI; если проверок ещё не было, кнопка сообщает об этом. Применить стратегию
+  можно после нового подбора.
 - Применение стратегии проверяет фактическое состояние службы и откатывается
   на предыдущую стратегию, если новая не перешла в `Running`.
 - Определение активного интерфейса Wi-Fi/Ethernet и нативное обновление
@@ -89,6 +95,7 @@ ZapretControl.Setup.exe --selftest
 %ProgramFiles%\ZapretControl\                 GUI, CLI, Setup
 %ProgramFiles%\ZapretControl\zapret\          payload Flowseal (bin, lists, utils, *.bat)
 %ProgramData%\ZapretControl\settings.json     настройки приложения
+%ProgramData%\ZapretControl\strategy-report.json результат последней проверки стратегий
 %ProgramData%\ZapretControl\logs\             setup.log, update.log, sync-iface.log, ui-error.log
 %ProgramData%\ZapretControl\backups\          бэкапы фейков и hosts
 %ProgramData%\ZapretControl\staging\          загрузки обновлений
@@ -102,7 +109,7 @@ ZapretControl.Setup.exe --selftest
 
 | Вкладка | Что делает |
 |---|---|
-| Главная | toggle защиты, статус/PID, активный интерфейс, «Обновить», выбор и подбор стратегии, быстрая проверка (DPI + видео YouTube + hosts) с итогом |
+| Главная | toggle защиты, статус/PID, активный интерфейс, «Обновить», выбор и подбор стратегии, «Последняя проверка» с датой и списком, быстрая проверка (DPI + видео YouTube + hosts) с итогом |
 | Служба | статус, стратегия, автозагрузка, остановка/запуск и перезапуск защиты, автосинхронизация, payload; пересоздание и удаление — в «Дополнительно» |
 | Игры | Game Filter: disabled/all/tcp/udp, диапазоны портов, сохранение и применение |
 | IPSet | loaded/none/any, обновление `ipset-all.txt`, резервная копия |
@@ -122,8 +129,8 @@ ZapretControl.Setup.exe --selftest
 {
   "schema": 1,
   "app": {
-    "version": "1.2.1",
-    "setup_url": "https://github.com/OWNER/REPO/releases/download/v1.2.1/ZapretControl.Setup.exe",
+    "version": "1.2.2",
+    "setup_url": "https://github.com/OWNER/REPO/releases/download/v1.2.2/ZapretControl.Setup.exe",
     "sha256": "...",
     "signer_thumbprint": "..."
   },
@@ -251,8 +258,9 @@ hosts, задачу и настройки, требуют прав админи�
 
 ## Как это работает
 
-- `AppPaths` / `Settings` — раскладка `%ProgramFiles%`/`%ProgramData%`,
-  настройки JSON, миграция и выбор payload.
+- `AppPaths` / `Settings` / `AtomicFile` — раскладка
+  `%ProgramFiles%`/`%ProgramData%`, настройки JSON, миграция и выбор payload;
+  атомарная запись JSON через уникальный временный файл и `Replace`/`Move`.
 - `ServiceManager` + `NativeService` + `StrategyParser` — нативные
   install/remove/status, `CreateService` через `advapi32`, разбор `.bat`,
   подстановка `%BIN%`, `%LISTS%`, `%GameFilterTCP%`, `%GameFilterUDP%`,
@@ -271,7 +279,9 @@ hosts, задачу и настройки, требуют прав админи�
   скачивает фрагменты `googlevideo`, `ConnectionTests` включает его в DPI-тест.
 - `StrategyAdvisor` — запускает временный `winws.exe`, проверяет Discord,
   страницу/плеер/видео YouTube и Google, сортирует полные и частичные
-  результаты; `HomeTab` показывает их в `StrategyResultsForm`.
+  результаты; `HomeTab` показывает их в `StrategyResultsForm`, а
+  `StrategyReportStore` сохраняет последний отчёт для кнопки «Последняя
+  проверка».
 - `UpdateManifest` / `UpdateService` / `SignatureVerifier` — dual-update,
   `release.json`, SHA256, WinVerifyTrust, запуск Setup.
 - `SetupEngine` / `SetupForm` / `SetupProgram` — установка, обновление,

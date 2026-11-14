@@ -16,12 +16,15 @@ namespace ZapretControl
         private ComboBox _strategy;
         private Button _applyStrategy;
         private Button _advise;
+        private Button _lastReport;
+        private ToolTip _toolTip;
         private Label _advice;
         private Label _checkSummary;
         private Button _checkButton;
         private Button _detailsButton;
         private IfaceStatus _ifaceStatus;
         private HomeCheckReport _lastCheck;
+        private bool _hasLastReport;
         private bool _busy;
         private bool _refreshing;
         private bool _updatingStrategy;
@@ -94,7 +97,15 @@ namespace ZapretControl
             _advise.AccessibleName = "Подобрать рабочую стратегию";
             _advice = AddMutedLabel(strategyCard,
                 "Выберите стратегию или нажмите «Подобрать».",
-                20, 86, 812, 18);
+                20, 80, 640, 30);
+            _lastReport = AddButton(
+                strategyCard, "Последняя проверка", 682, 84, 150, 24, OnLastReport);
+            _lastReport.AccessibleName =
+                "Открыть результат последней проверки стратегий";
+            _lastReport.Enabled = false;
+            _toolTip = new ToolTip();
+            _toolTip.ShowAlways = true;
+            _toolTip.SetToolTip(_lastReport, "Проверок пока не было.");
 
             CardPanel checkCard = AddCard("ПРОВЕРКА", 0, 430, 852, 84);
             _checkSummary = AddLabel(
@@ -113,6 +124,7 @@ namespace ZapretControl
         public override void ActivateTab()
         {
             ReloadStrategies();
+            RefreshLastReportState();
         }
 
         public override async void RefreshData()
@@ -270,6 +282,7 @@ namespace ZapretControl
             _strategy.Enabled = !_busy && hasStrategies;
             _applyStrategy.Enabled = !_busy && hasStrategies;
             _advise.Enabled = !_busy && hasStrategies;
+            _lastReport.Enabled = !_busy;
             _checkButton.Enabled = !_busy;
             _detailsButton.Enabled = !_busy && _lastCheck != null;
         }
@@ -492,17 +505,17 @@ namespace ZapretControl
             {
                 if (result.RolledBack)
                 {
-                    string text = "Стратегия \"" + strategy + "\" не запустилась. " +
-                        "Восстановлена предыдущая: " +
-                        (string.IsNullOrEmpty(result.PreviousStrategyName)
-                            ? "без имени"
-                            : result.PreviousStrategyName) + ".";
+                    string previous = string.IsNullOrEmpty(result.PreviousStrategyName)
+                        ? "предыдущая стратегия"
+                        : result.PreviousStrategyName;
+                    string text = "Восстановлена: " + previous + ".";
                     text += result.PreviousRunning && result.ServiceRunning
                         ? " Защита работает."
                         : " Защита остановлена.";
                     SetState(_advice, text, result.ServiceRunning ? AmberColor : RedColor);
                     MessageBox.Show(
                         this,
+                        "Стратегия \"" + strategy + "\" не запустилась.\n\n" +
                         text + "\n\n" + result.Error,
                         "Служба не запустилась",
                         MessageBoxButtons.OK,
@@ -543,6 +556,57 @@ namespace ZapretControl
         private void OnAdvise(object sender, EventArgs e)
         {
             StartAdvice(true);
+        }
+
+        private void RefreshLastReportState()
+        {
+            SetLastReportState(StrategyReportStore.Load());
+        }
+
+        private void SetLastReportState(StrategyAdviceReport report)
+        {
+            _hasLastReport = report != null;
+            if (_lastReport != null && !_lastReport.IsDisposed)
+            {
+                _lastReport.Enabled = !_busy;
+            }
+            if (_toolTip != null && _lastReport != null)
+            {
+                string text;
+                if (!_hasLastReport)
+                {
+                    text = "Проверок пока не было.";
+                }
+                else if (string.IsNullOrEmpty(report.CheckedAtDisplay))
+                {
+                    text = "Последняя проверка сохранена.";
+                }
+                else
+                {
+                    text = "Последняя проверка: " + report.CheckedAtDisplay + ".";
+                }
+                _toolTip.SetToolTip(_lastReport, text);
+            }
+        }
+
+        private void OnLastReport(object sender, EventArgs e)
+        {
+            if (_busy)
+            {
+                return;
+            }
+            StrategyAdviceReport report = StrategyReportStore.Load();
+            if (report == null)
+            {
+                RefreshLastReportState();
+                ShowInfo("Проверок пока не было. Нажмите «Подобрать».");
+                return;
+            }
+            using (StrategyResultsForm form =
+                new StrategyResultsForm(report, true))
+            {
+                form.ShowDialog(this);
+            }
         }
 
         // Reusable entry point for the home button and the first-run prompt.
@@ -620,6 +684,12 @@ namespace ZapretControl
                 return;
             }
 
+            bool reportSaved = StrategyReportStore.Save(report);
+            if (reportSaved)
+            {
+                SetLastReportState(report);
+            }
+
             string restoreWarning = report.ServiceWasRunning && !report.ServiceRestored
                 ? "Служба не вернулась после проверки — включите защиту вручную."
                 : string.Empty;
@@ -632,6 +702,12 @@ namespace ZapretControl
                     return;
                 }
                 selected = form.SelectedResult;
+            }
+            if (!reportSaved)
+            {
+                ShowInfo(
+                    "Отчёт проверки не сохранён — кнопка «Последняя проверка» " +
+                    "останется с прежним результатом.");
             }
             if (selected == null)
             {
@@ -912,6 +988,16 @@ namespace ZapretControl
             {
                 ShowError("Не удалось изменить состояние службы", error);
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _toolTip != null)
+            {
+                _toolTip.Dispose();
+                _toolTip = null;
+            }
+            base.Dispose(disposing);
         }
     }
 }

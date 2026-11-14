@@ -55,9 +55,11 @@ namespace ZapretControl
                 SystemSid + ":(OI)(CI)F",
                 Users + ":(OI)(CI)RX"
             };
+            // Take ownership first: the current owner has implicit WRITE_DAC
+            // and could otherwise restore permissions between the two calls.
+            SetOwner(path);
             RunIcacls(path, new string[] { "/inheritance:r", "/grant:r" }
                 .Concat(grants).ToArray());
-            SetOwner(path);
         }
 
         public static void HardenFile(string path)
@@ -72,9 +74,9 @@ namespace ZapretControl
                 SystemSid + ":F",
                 Users + ":RX"
             };
+            SetOwner(path);
             RunIcacls(path, new string[] { "/inheritance:r", "/grant:r" }
                 .Concat(grants).ToArray());
-            SetOwner(path);
         }
 
         private static void SetOwner(string path)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Threading;
 
@@ -177,6 +178,7 @@ namespace ZapretControl
         public string Error { get; private set; }
         public bool ServiceWasRunning { get; private set; }
         public bool ServiceRestored { get; private set; }
+        public DateTime CheckedAtUtc { get; private set; }
 
         public StrategyAdviceReport()
         {
@@ -185,6 +187,28 @@ namespace ZapretControl
             RecommendedPath = string.Empty;
             BestName = string.Empty;
             Error = string.Empty;
+            CheckedAtUtc = DateTime.UtcNow;
+        }
+
+        // Local, user-facing stamp for the results window and the home button.
+        public string CheckedAtDisplay
+        {
+            get
+            {
+                if (CheckedAtUtc == DateTime.MinValue)
+                {
+                    return string.Empty;
+                }
+                DateTime local = CheckedAtUtc.Kind == DateTimeKind.Utc
+                    ? CheckedAtUtc.ToLocalTime()
+                    : CheckedAtUtc;
+                return local.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture);
+            }
+        }
+
+        internal void SetCheckedAtUtc(DateTime value)
+        {
+            CheckedAtUtc = value;
         }
 
         public bool HasRecommendation
@@ -415,6 +439,8 @@ namespace ZapretControl
                         Log(log, "Не удалось вернуть службу: " + ex.Message);
                     }
                 }
+                // The stamp means "when the check finished", not when it began.
+                report.SetCheckedAtUtc(DateTime.UtcNow);
             }
             return report;
         }

@@ -1232,6 +1232,63 @@ namespace ZapretControl
                 Console.Error.WriteLine("selftest failed: strategy advisor ranking");
                 return 1;
             }
+            string reportPath = Path.Combine(
+                Path.GetTempPath(),
+                "ZapretControl-selftest-strategy-report-" +
+                Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                StrategyAdviceReport savedReport = new StrategyAdviceReport();
+                StrategyProbeResult savedResult = new StrategyProbeResult(
+                    "general", "C:\\z\\g.bat", true, true, true, true, 3, 3, true, 120, "");
+                savedReport.Results.Add(savedResult);
+                savedReport.SetRecommended(savedResult);
+                savedReport.SetCheckedAtUtc(
+                    new DateTime(2026, 11, 15, 12, 30, 0, DateTimeKind.Utc));
+                if (!StrategyReportStore.SaveToPath(savedReport, reportPath))
+                {
+                    Console.Error.WriteLine("selftest failed: strategy report save");
+                    return 1;
+                }
+                StrategyAdviceReport loadedReport =
+                    StrategyReportStore.LoadFromPath(reportPath);
+                if (loadedReport == null ||
+                    loadedReport.Results.Count != 1 ||
+                    loadedReport.RecommendedName != "general" ||
+                    !loadedReport.Results[0].Ok ||
+                    loadedReport.CheckedAtUtc.Kind != DateTimeKind.Utc ||
+                    loadedReport.CheckedAtUtc !=
+                        new DateTime(2026, 11, 15, 12, 30, 0, DateTimeKind.Utc))
+                {
+                    Console.Error.WriteLine("selftest failed: strategy report roundtrip");
+                    return 1;
+                }
+                if (StrategyReportStore.SaveToPath(
+                        new StrategyAdviceReport(), reportPath))
+                {
+                    Console.Error.WriteLine("selftest failed: empty strategy report saved");
+                    return 1;
+                }
+                File.WriteAllText(reportPath, "{not a report");
+                if (StrategyReportStore.LoadFromPath(reportPath) != null)
+                {
+                    Console.Error.WriteLine("selftest failed: corrupt strategy report accepted");
+                    return 1;
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(reportPath))
+                    {
+                        File.Delete(reportPath);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
             if (new SettingsData().FirstRunCompleted)
             {
                 Console.Error.WriteLine("selftest failed: FirstRunCompleted default");

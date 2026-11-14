@@ -71,29 +71,9 @@ namespace ZapretControl
                 }
                 try
                 {
-                    AppPaths.EnsureDirectory(AppPaths.DataDirectory);
                     JavaScriptSerializer serializer = new JavaScriptSerializer();
                     string json = serializer.Serialize(_cached);
-                    string path = AppPaths.SettingsPath;
-                    string temporary = path + ".tmp";
-                    File.WriteAllText(temporary, json, new UTF8Encoding(false));
-                    if (File.Exists(path))
-                    {
-                        try
-                        {
-                            File.Replace(temporary, path, null);
-                        }
-                        catch (Exception)
-                        {
-                            File.Copy(temporary, path, true);
-                            File.Delete(temporary);
-                        }
-                    }
-                    else
-                    {
-                        File.Move(temporary, path);
-                    }
-                    return true;
+                    return AtomicFile.WriteAllText(AppPaths.SettingsPath, json);
                 }
                 catch (Exception)
                 {

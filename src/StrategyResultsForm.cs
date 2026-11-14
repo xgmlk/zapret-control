@@ -9,6 +9,7 @@ namespace ZapretControl
     public sealed class StrategyResultsForm : Form
     {
         private readonly StrategyAdviceReport _report;
+        private readonly bool _readOnly;
         private ListView _list;
         private TextBox _detail;
         private Button _apply;
@@ -16,10 +17,20 @@ namespace ZapretControl
         public StrategyProbeResult SelectedResult { get; private set; }
 
         public StrategyResultsForm(StrategyAdviceReport report)
+            : this(report, false)
+        {
+        }
+
+        // readOnly is used by the "last check" button: the list and the
+        // timestamp stay visible, but applying still requires a fresh run.
+        public StrategyResultsForm(StrategyAdviceReport report, bool readOnly)
         {
             _report = report ?? new StrategyAdviceReport();
-            Text = "Zapret Control — результаты подбора";
-            ClientSize = new Size(860, 532);
+            _readOnly = readOnly;
+            Text = readOnly
+                ? "Zapret Control — последняя проверка"
+                : "Zapret Control — результаты подбора";
+            ClientSize = new Size(860, 562);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -47,8 +58,18 @@ namespace ZapretControl
                 : Color.FromArgb(150, 112, 28);
             Controls.Add(header);
 
+            Label checkedAt = new Label();
+            checkedAt.SetBounds(20, 70, 820, 16);
+            checkedAt.Text = (readOnly ? "Последняя проверка: " : "Проверка выполнена: ") +
+                (string.IsNullOrEmpty(_report.CheckedAtDisplay)
+                    ? "время неизвестно"
+                    : _report.CheckedAtDisplay);
+            checkedAt.ForeColor = Color.FromArgb(110, 110, 115);
+            checkedAt.Font = new Font("Segoe UI", 8.25F);
+            Controls.Add(checkedAt);
+
             _list = new ListView();
-            _list.SetBounds(20, 76, 820, 306);
+            _list.SetBounds(20, 90, 820, 298);
             _list.View = View.Details;
             _list.FullRowSelect = true;
             _list.MultiSelect = false;
@@ -69,11 +90,11 @@ namespace ZapretControl
             Label detailCaption = new Label();
             detailCaption.Text = "Подробности:";
             detailCaption.ForeColor = Color.FromArgb(110, 110, 115);
-            detailCaption.SetBounds(20, 390, 200, 18);
+            detailCaption.SetBounds(20, 396, 200, 18);
             Controls.Add(detailCaption);
 
             _detail = new TextBox();
-            _detail.SetBounds(20, 410, 820, 54);
+            _detail.SetBounds(20, 416, 820, 54);
             _detail.Multiline = true;
             _detail.ReadOnly = true;
             _detail.ScrollBars = ScrollBars.Vertical;
@@ -83,13 +104,14 @@ namespace ZapretControl
 
             _apply = new Button();
             _apply.Text = "Применить";
-            _apply.SetBounds(624, 480, 100, 30);
+            _apply.SetBounds(624, 486, 100, 30);
             _apply.Click += OnApply;
+            _apply.Visible = !readOnly;
             Controls.Add(_apply);
 
             Button close = new Button();
             close.Text = "Закрыть";
-            close.SetBounds(736, 480, 100, 30);
+            close.SetBounds(736, 486, 100, 30);
             close.Click += delegate
             {
                 SelectedResult = null;
@@ -98,7 +120,7 @@ namespace ZapretControl
             };
             Controls.Add(close);
 
-            AcceptButton = _apply;
+            AcceptButton = readOnly ? close : _apply;
             CancelButton = close;
             Populate();
         }
@@ -127,7 +149,9 @@ namespace ZapretControl
                 {
                     text += " Лучшая: " + _report.RecommendedName + ".";
                 }
-                text += " Выберите вариант и нажмите «Применить».";
+                text += _readOnly
+                    ? " Сохранённый результат: чтобы применить, подберите заново."
+                    : " Выберите вариант и нажмите «Применить».";
             }
             else
             {
@@ -141,6 +165,10 @@ namespace ZapretControl
                 else
                 {
                     text += " Ни одна стратегия не прошла ни одной проверки.";
+                }
+                if (_readOnly)
+                {
+                    text += " Это сохранённый результат последней проверки.";
                 }
             }
             if ((full > 0 || partial > 0) && !string.IsNullOrEmpty(_report.Error))
@@ -238,7 +266,7 @@ namespace ZapretControl
         private void UpdateDetail()
         {
             StrategyProbeResult result = CurrentResult();
-            _apply.Enabled = result != null;
+            _apply.Enabled = !_readOnly && result != null;
             if (result == null)
             {
                 _detail.Text = "Выберите стратегию.";
@@ -264,6 +292,10 @@ namespace ZapretControl
 
         private void OnApply(object sender, EventArgs e)
         {
+            if (_readOnly)
+            {
+                return;
+            }
             StrategyProbeResult result = CurrentResult();
             if (result == null)
             {

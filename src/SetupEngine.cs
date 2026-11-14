@@ -475,6 +475,10 @@ namespace ZapretControl
                     {
                         Log(log, message);
                     });
+                if (report.Results.Count > 0 && !StrategyReportStore.Save(report))
+                {
+                    Log(log, "Не удалось сохранить результат подбора для главной.");
+                }
                 if (!string.IsNullOrEmpty(report.RecommendedPath))
                 {
                     Log(log, "Рекомендована стратегия " + report.RecommendedName +
