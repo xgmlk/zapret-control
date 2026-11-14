@@ -1,0 +1,96 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: powershell
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if (-not $tag) { $tag = 'v1.1.0' }
+          $version = $tag.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Tag must look like v1.2.3, got $tag"
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Check code-signing secret
+        id: signing
+        shell: powershell
+        env:
+          PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+        run: |
+          if ($env:PFX_BASE64) { "signed=true" >> $env:GITHUB_OUTPUT }
+          else { "signed=false" >> $env:GITHUB_OUTPUT }
+
+      - name: Build signed
+        if: steps.signing.outputs.signed == 'true'
+        shell: powershell
+        env:
+          PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.CODE_SIGN_PFX_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [System.IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+          .\build.ps1 -Version '${{ steps.version.outputs.version }}' -Sign -PfxPath $pfx -PfxPassword $env:PFX_PASSWORD
+          if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed: $LASTEXITCODE" }
+
+      - name: Build unsigned (prerelease)
+        if: steps.signing.outputs.signed == 'false'
+        shell: powershell
+        run: |
+          Write-Warning 'CODE_SIGN_PFX_BASE64 is not configured; the release will be a prerelease (T2).'
+          .\build.ps1 -Version '${{ steps.version.outputs.version }}'
+          if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed: $LASTEXITCODE" }
+
+      - name: Tests
+        shell: powershell
+        run: |
+          .\tests\run-tests.ps1 -NoLive
+          if ($LASTEXITCODE -ne 0) { throw "tests failed: $LASTEXITCODE" }
+
+      - name: Release manifest
+        shell: powershell
+        run: |
+          $arguments = @{ Version = '${{ steps.version.outputs.version }}'; Repository = '${{ github.repository }}'; SkipBuild = $true }
+          if ('${{ steps.signing.outputs.signed }}' -eq 'true') { $arguments['RequireSignature'] = $true }
+          .\release.ps1 @arguments
+          if ($LASTEXITCODE -ne 0) { throw "release.ps1 failed: $LASTEXITCODE" }
+
+      - name: Publish GitHub release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $files = @(
+            'dist\ZapretControl.Setup.exe',
+            'dist\ZapretControl.exe',
+            'dist\ZapretControl.Cli.exe',
+            'dist\release.json',
+            'dist\SHA256SUMS.txt'
+          )
+          $arguments = @('release', 'create', $tag) + $files + @(
+            '--title', ('Zapret Control ' + $tag),
+            '--generate-notes'
+          )
+          if ('${{ steps.signing.outputs.signed }}' -eq 'false') {
+            $arguments += '--prerelease'
+          }
+          gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed: $LASTEXITCODE" }

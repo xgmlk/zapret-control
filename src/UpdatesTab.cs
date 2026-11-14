@@ -1,0 +1,439 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace ZapretControl
+{
+    public sealed class UpdatesTab : TabView
+    {
+        private Label _appCurrent;
+        private Label _appLatest;
+        private Label _payloadCurrent;
+        private Label _payloadLatest;
+        private Label _checkStatus;
+        private Button _check;
+        private Button _updatePayload;
+        private Button _updateApp;
+        private Button _rollback;
+        private TextBox _manifest;
+        private CheckBox _autoCheck;
+        private CheckBox _autoPayload;
+        private TextBox _log;
+        private UpdateCheckResult _result;
+        private DateTime _lastAutoCheck;
+        private bool _busy;
+
+        public override string TabTitle
+        {
+            get { return "Обновления"; }
+        }
+
+        public UpdatesTab()
+        {
+            CardPanel status = AddCard("КАНАЛЫ ОБНОВЛЕНИЙ", 0, 0, 852, 194);
+            AddMutedLabel(status, "ПРИЛОЖЕНИЕ", 20, 36, 180, 16);
+            _appCurrent = AddLabel(status, "—", 20, 56, 180, 20);
+            AddMutedLabel(status, "ДОСТУПНО", 210, 36, 180, 16);
+            _appLatest = AddLabel(status, "—", 210, 56, 180, 20);
+            AddMutedLabel(status, "PAYLOAD FLOWSEAL", 430, 36, 200, 16);
+            _payloadCurrent = AddLabel(status, "—", 430, 56, 180, 20);
+            AddMutedLabel(status, "ДОСТУПНО", 620, 36, 180, 16);
+            _payloadLatest = AddLabel(status, "—", 620, 56, 212, 20);
+            _checkStatus = AddMutedLabel(status, "Проверка не выполнялась.", 20, 86, 812, 20);
+            _check = AddButton(status, "Проверить", 20, 116, 130, 32, OnCheck);
+            _updatePayload = AddButton(
+                status, "Обновить zapret", 160, 116, 160, 32, OnUpdatePayload);
+            _updateApp = AddButton(
+                status, "Обновить приложение", 330, 116, 180, 32, OnUpdateApp);
+            _rollback = AddButton(
+                status, "Откатить payload", 520, 116, 160, 32, OnRollback);
+            _updatePayload.Enabled = false;
+            _updateApp.Enabled = false;
+            _rollback.Enabled = false;
+            AddMutedLabel(status,
+                "Обновление приложения запускает подписанный Setup.exe и закрывает GUI; " +
+                "payload ставится через staging, backup и rollback.",
+                20, 158, 812, 20);
+
+            CardPanel settings = AddCard("ИСТОЧНИК", 0, 206, 852, 110);
+            AddMutedLabel(settings, "RELEASE.JSON", 20, 36, 160, 16);
+            _manifest = AddTextBox(settings, 20, 56, 600, 24, false);
+            AddButton(settings, "Сохранить", 630, 54, 120, 26, OnSaveSettings);
+            _autoCheck = new CheckBox();
+            _autoCheck.Text = "Проверять обновления при открытии вкладки";
+            _autoCheck.SetBounds(20, 84, 360, 22);
+            settings.Controls.Add(_autoCheck);
+            _autoPayload = new CheckBox();
+            _autoPayload.Text = "Устанавливать payload автоматически";
+            _autoPayload.SetBounds(390, 84, 360, 22);
+            settings.Controls.Add(_autoPayload);
+
+            CardPanel logCard = AddCard("ЖУРНАЛ ОБНОВЛЕНИЙ", 0, 328, 852, 192);
+            _log = AddTextBox(logCard, 20, 36, 812, 140, true);
+            _log.Font = new System.Drawing.Font("Consolas", 8.5F);
+        }
+
+        public override async void ActivateTab()
+        {
+            SettingsData settings = Settings.Load();
+            _manifest.Text = settings.ManifestUrl;
+            _autoCheck.Checked = settings.AutoCheckUpdates;
+            _autoPayload.Checked = settings.AutoUpdatePayload;
+            _appCurrent.Text = AppInfo.Version;
+            _payloadCurrent.Text = PayloadManager.GetVersion(AppPaths.ResolvePayloadRoot());
+            if (_payloadCurrent.Text.Length == 0)
+            {
+                _payloadCurrent.Text = "неизвестна";
+            }
+            if (_lastAutoCheck == DateTime.MinValue && !string.IsNullOrEmpty(settings.LastCheckUtc))
+            {
+                DateTime parsed;
+                if (DateTime.TryParse(settings.LastCheckUtc, out parsed))
+                {
+                    _lastAutoCheck = parsed.ToUniversalTime();
+                }
+            }
+            if (_result == null)
+            {
+                _appLatest.Text = "—";
+                _payloadLatest.Text = "—";
+            }
+            bool auto = settings.AutoCheckUpdates &&
+                (DateTime.UtcNow - _lastAutoCheck).TotalHours >= 6;
+            if (auto && !_busy)
+            {
+                _lastAutoCheck = DateTime.UtcNow;
+                await CheckNow();
+            }
+        }
+
+        private async void OnCheck(object sender, EventArgs e)
+        {
+            await CheckNow();
+        }
+
+        private async Task CheckNow()
+        {
+            if (_busy)
+            {
+                return;
+            }
+            string url = _manifest.Text.Trim();
+            if (url.Length == 0)
+            {
+                url = AppInfo.DefaultManifestUrl;
+            }
+            _busy = true;
+            _check.Enabled = false;
+            SetState(_checkStatus, "Проверяю release.json…", AmberColor);
+            UpdateCheckResult result = null;
+            Exception error = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    result = UpdateService.Check(url, AppPaths.ResolvePayloadRoot());
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            _busy = false;
+            _check.Enabled = true;
+            if (error != null)
+            {
+                SetState(_checkStatus, "Ошибка: " + ShortError(error), RedColor);
+                AppendLog("Ошибка проверки: " + ShortError(error));
+                return;
+            }
+            _result = result;
+            _appLatest.Text = string.IsNullOrEmpty(result.LatestAppVersion)
+                ? "—"
+                : result.LatestAppVersion;
+            _payloadLatest.Text = string.IsNullOrEmpty(result.LatestPayloadVersion)
+                ? "—"
+                : result.LatestPayloadVersion;
+            _updateApp.Enabled = result.AppUpdateAvailable && AppPaths.IsInstalledLayout();
+            _updatePayload.Enabled = result.PayloadUpdateAvailable;
+            _rollback.Enabled = PayloadManager.ListBackups(
+                AppPaths.ResolvePayloadRoot()).Count > 0;
+
+            if (!string.IsNullOrEmpty(result.ManifestError))
+            {
+                SetState(_checkStatus, result.ManifestError, AmberColor);
+                AppendLog(result.ManifestError);
+            }
+            else if (result.AppUpdateAvailable || result.PayloadUpdateAvailable)
+            {
+                string text = "Доступно:";
+                if (result.AppUpdateAvailable)
+                {
+                    text += " приложение " + result.LatestAppVersion;
+                }
+                if (result.PayloadUpdateAvailable)
+                {
+                    text += (text == "Доступно:" ? string.Empty : ",") +
+                            " payload " + result.LatestPayloadVersion;
+                }
+                SetState(_checkStatus, text, AmberColor);
+                AppendLog(text);
+            }
+            else
+            {
+                SetState(_checkStatus, "Обновлений нет.", GreenColor);
+                AppendLog("Обновлений нет.");
+            }
+
+            SettingsData settings = Settings.Load();
+            settings.LastCheckUtc = DateTime.UtcNow.ToString("o");
+            settings.AutoCheckUpdates = _autoCheck.Checked;
+            settings.AutoUpdatePayload = _autoPayload.Checked;
+            Settings.Save();
+
+            if (_autoPayload.Checked && result.PayloadUpdateAvailable)
+            {
+                await ApplyPayload(true);
+            }
+        }
+
+        private async void OnUpdatePayload(object sender, EventArgs e)
+        {
+            await ApplyPayload(false);
+        }
+
+        private async Task ApplyPayload(bool automatic)
+        {
+            if (_busy || _result == null)
+            {
+                return;
+            }
+            if (!_result.PayloadUpdateAvailable)
+            {
+                ShowInfo("Обновление payload не требуется.");
+                return;
+            }
+            if (!automatic &&
+                !Confirm("Обновить payload Flowseal до " + _result.LatestPayloadVersion +
+                         "?\nСлужба будет остановлена, создана резервная копия и выполнен " +
+                         "перезапуск при успехе."))
+            {
+                return;
+            }
+            _busy = true;
+            _updatePayload.Enabled = false;
+            _updateApp.Enabled = false;
+            SetState(_checkStatus,
+                automatic ? "Автоматическое обновление payload…" : "Обновляю payload…",
+                AmberColor);
+            Exception error = null;
+            PayloadUpdateResult result = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    result = UpdateService.ApplyPayload(
+                        _result,
+                        AppPaths.ResolvePayloadRoot(),
+                        delegate(long received, long total)
+                        {
+                            if (total > 0)
+                            {
+                                AppendLogAsync("Загрузка payload: " +
+                                    (received * 100 / total) + "%");
+                            }
+                        });
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            _busy = false;
+            _updatePayload.Enabled = true;
+            _updateApp.Enabled = _result.AppUpdateAvailable && AppPaths.IsInstalledLayout();
+            _payloadCurrent.Text = PayloadManager.GetVersion(AppPaths.ResolvePayloadRoot());
+            if (error != null)
+            {
+                SetState(_checkStatus, "Ошибка обновления: " + ShortError(error), RedColor);
+                AppendLog("Ошибка payload: " + ShortError(error));
+                ShowError("Не удалось обновить payload", error);
+                return;
+            }
+            if (result != null)
+            {
+                _result.PayloadUpdateAvailable = false;
+                _updatePayload.Enabled = false;
+                string text = "Payload обновлён: " + result.OldVersion + " -> " +
+                    result.NewVersion + ", стратегия " + result.StrategyName + ".";
+                if (result.Warning != null)
+                {
+                    text += " " + result.Warning;
+                }
+                SetState(_checkStatus, text, GreenColor);
+                AppendLog(text);
+                if (!automatic)
+                {
+                    ShowInfo(text);
+                }
+            }
+        }
+
+        private async void OnUpdateApp(object sender, EventArgs e)
+        {
+            if (_busy || _result == null || !_result.AppUpdateAvailable)
+            {
+                return;
+            }
+            if (!Confirm("Скачать и установить Zapret Control " + _result.LatestAppVersion +
+                         "?\nПриложение закроется, установщик обновит файлы и запустит " +
+                         "новую версию. Настройки и payload сохранятся."))
+            {
+                return;
+            }
+            _busy = true;
+            _updateApp.Enabled = false;
+            SetState(_checkStatus, "Скачиваю установщик…", AmberColor);
+            Exception error = null;
+            AppUpdateLaunch launch = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    launch = UpdateService.ApplyAppUpdate(
+                        _result,
+                        delegate(long received, long total)
+                        {
+                            if (total > 0)
+                            {
+                                AppendLogAsync("Загрузка установщика: " +
+                                    (received * 100 / total) + "%");
+                            }
+                        });
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            _busy = false;
+            if (error != null)
+            {
+                _updateApp.Enabled = true;
+                SetState(_checkStatus, "Ошибка: " + ShortError(error), RedColor);
+                AppendLog("Ошибка приложения: " + ShortError(error));
+                ShowError("Не удалось обновить приложение", error);
+                return;
+            }
+            if (launch != null)
+            {
+                AppendLog("Установщик запущен: " + launch.SetupPath);
+                MessageBox.Show(
+                    this,
+                    "Установщик запущен. Приложение закроется, обновление продолжится " +
+                    "в отдельном окне.",
+                    "Zapret Control",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                Application.Exit();
+            }
+        }
+
+        private async void OnRollback(object sender, EventArgs e)
+        {
+            if (_busy)
+            {
+                return;
+            }
+            if (!Confirm("Откатить payload к последней резервной копии?\n" +
+                         "Служба будет пересоздана."))
+            {
+                return;
+            }
+            _busy = true;
+            SetState(_checkStatus, "Откатываю payload…", AmberColor);
+            Exception error = null;
+            PayloadUpdateResult result = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    result = PayloadManager.RestoreLatestBackup(true);
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            _busy = false;
+            if (error != null)
+            {
+                SetState(_checkStatus, "Ошибка отката: " + ShortError(error), RedColor);
+                ShowError("Не удалось откатить payload", error);
+                return;
+            }
+            if (result != null)
+            {
+                string text = "Payload откатан: " + result.NewVersion +
+                    ", стратегия " + result.StrategyName + ".";
+                SetState(_checkStatus, text, GreenColor);
+                AppendLog(text);
+                _payloadCurrent.Text = PayloadManager.GetVersion(AppPaths.ResolvePayloadRoot());
+                ShowInfo(text);
+            }
+        }
+
+        private void OnSaveSettings(object sender, EventArgs e)
+        {
+            SettingsData settings = Settings.Load();
+            settings.ManifestUrl = _manifest.Text.Trim();
+            if (settings.ManifestUrl.Length == 0)
+            {
+                settings.ManifestUrl = AppInfo.DefaultManifestUrl;
+                _manifest.Text = settings.ManifestUrl;
+            }
+            settings.AutoCheckUpdates = _autoCheck.Checked;
+            settings.AutoUpdatePayload = _autoPayload.Checked;
+            if (Settings.Save())
+            {
+                SetState(_checkStatus, "Настройки обновлений сохранены.", GreenColor);
+            }
+            else
+            {
+                SetState(_checkStatus,
+                    "Не удалось сохранить настройки (нет доступа к ProgramData).", RedColor);
+            }
+        }
+
+        private void AppendLog(string message)
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            _log.AppendText(DateTime.Now.ToString("HH:mm:ss") + " " + message +
+                            Environment.NewLine);
+        }
+
+        private void AppendLogAsync(string message)
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            if (InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke(new Action<string>(AppendLogAsync), message);
+                }
+                catch (Exception)
+                {
+                }
+                return;
+            }
+            AppendLog(message);
+        }
+    }
+}

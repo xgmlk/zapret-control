@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        shell: powershell
+        run: .\build.ps1
+
+      - name: Smoke tests without an installed zapret service
+        shell: powershell
+        run: .\tests\run-tests.ps1 -NoLive
+
+      - name: T7 smoke test and release manifest
+        shell: powershell
+        run: .\tests\t7-smoke.ps1
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zapret-control
+          path: |
+            dist/ZapretControl.exe
+            dist/ZapretControl.Cli.exe
+            dist/ZapretControl.Setup.exe
+            dist/release.json
+            dist/SHA256SUMS.txt
+          if-no-files-found: error

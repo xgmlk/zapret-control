@@ -1,0 +1,13 @@
+dist/
+*.user
+*.suo
+*.pfx
+*.p12
+*.log
+logs/
+.vs/
+
+# Агентские файлы и локальная память проекта (решение D12)
+/AGENTS.md
+/.project-memory.json
+/docs/
