@@ -85,7 +85,7 @@ jobs:
           $arguments = @('release', 'create', $tag) + $files + @(
             '--title', ('Zapret Control ' + $tag),
             '--generate-notes',
-            '--notes', 'Скачайте `ZapretControl.Setup.exe` — установщик уже содержит GUI и CLI и сам скачает payload. `release.json` нужен приложению для обновлений.'
+            '--notes', 'Download ZapretControl.Setup.exe: the installer contains GUI and CLI and downloads the payload. release.json is used by the app for updates.'
           )
           if ('${{ steps.signing.outputs.signed }}' -eq 'false') {
             $arguments += '--prerelease'
