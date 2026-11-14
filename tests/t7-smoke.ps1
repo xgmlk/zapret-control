@@ -60,8 +60,7 @@ if (-not $SkipRelease) {
     if ($LASTEXITCODE -ne 0) { throw "manifest-check failed: $LASTEXITCODE" }
 
     $sums = Get-Content -LiteralPath (Join-Path $root 'dist\SHA256SUMS.txt')
-    foreach ($name in @('ZapretControl.exe', 'ZapretControl.Cli.exe',
-            'ZapretControl.Setup.exe', 'release.json')) {
+    foreach ($name in @('ZapretControl.Setup.exe', 'release.json')) {
         if (-not ($sums | Where-Object { $_ -match "  $([regex]::Escape($name))$" })) {
             throw "SHA256SUMS.txt does not list $name"
         }

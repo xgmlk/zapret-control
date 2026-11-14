@@ -79,14 +79,13 @@ jobs:
           $tag = '${{ steps.version.outputs.tag }}'
           $files = @(
             'dist\ZapretControl.Setup.exe',
-            'dist\ZapretControl.exe',
-            'dist\ZapretControl.Cli.exe',
             'dist\release.json',
             'dist\SHA256SUMS.txt'
           )
           $arguments = @('release', 'create', $tag) + $files + @(
             '--title', ('Zapret Control ' + $tag),
-            '--generate-notes'
+            '--generate-notes',
+            '--notes', 'Скачайте `ZapretControl.Setup.exe` — установщик уже содержит GUI и CLI и сам скачает payload. `release.json` нужен приложению для обновлений.'
           )
           if ('${{ steps.signing.outputs.signed }}' -eq 'false') {
             $arguments += '--prerelease'

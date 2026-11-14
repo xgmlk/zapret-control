@@ -181,7 +181,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\release.ps1
 GitHub Actions по тегу `v*` (`.github/workflows/release.yml`): сборка,
 подпись при наличии секретов `CODE_SIGN_PFX_BASE64`/`CODE_SIGN_PFX_PASSWORD`,
 тесты, `release.json`, `gh release create`. Без секрета релиз создаётся как
-prerelease.
+prerelease. В GitHub Release публикуются `ZapretControl.Setup.exe`,
+`release.json` и `SHA256SUMS.txt`; GUI и CLI встроены в Setup, отдельные exe
+остаются только артефактами CI.
 
 Секреты GitHub: `CODE_SIGN_PFX_BASE64` — base64 PFX, `CODE_SIGN_PFX_PASSWORD` —
 пароль. Репозиторий и владелец задаются в `AppInfo.Repository` и

@@ -189,7 +189,7 @@ $json = $manifest | ConvertTo-Json -Depth 5
 
 $sumsPath = Join-Path $dist 'SHA256SUMS.txt'
 $lines = @()
-foreach ($file in @($gui, $cli, $setup, $manifestPath)) {
+foreach ($file in @($setup, $manifestPath)) {
     $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
     $lines += ('{0}  {1}' -f $hash, (Split-Path -Leaf $file))
 }
