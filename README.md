@@ -1,5 +1,9 @@
 # Zapret Control
 
+> **Оригинальный zapret:** [Flowseal / zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) —
+> сам zapret, его стратегии, списки и документация. Zapret Control — неофициальная
+> оболочка, установщик и менеджер для этого дистрибутива; оригинал он не заменяет.
+
 Нативное Windows-приложение на C# 5 / WinForms для установки и управления
 zapret (дистрибутив Flowseal `zapret-discord-youtube`): служба, включение и
 выключение, выбор стратегии, Game Filter, IPSet, фейки, обновления, диагностика
