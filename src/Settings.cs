@@ -24,7 +24,7 @@ namespace ZapretControl
             PayloadRoot = string.Empty;
             Strategy = string.Empty;
             AutoCheckUpdates = true;
-            AutoUpdatePayload = false;
+            AutoUpdatePayload = true;
             LastCheckUtc = string.Empty;
             InstalledVersion = string.Empty;
             InstallDate = string.Empty;

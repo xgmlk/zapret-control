@@ -50,12 +50,25 @@ namespace ZapretControl
             }
 
             Diagnostics.EnableTimestamps();
+            bool preserveManualStart = NativeService.Exists(AppInfo.ServiceName) &&
+                                       !NativeService.IsAutoStart(AppInfo.ServiceName);
             StopAndDelete(AppInfo.ServiceName);
             NativeService.Install(
                 AppInfo.ServiceName,
                 AppInfo.ServiceName,
                 command.CommandLine,
                 "Zapret DPI bypass software");
+            if (preserveManualStart)
+            {
+                try
+                {
+                    NativeService.SetAutoStart(AppInfo.ServiceName, false);
+                }
+                catch (Exception ex)
+                {
+                    Log("autostart restore failed: " + ex.GetType().Name + ": " + ex.Message);
+                }
+            }
             WriteStrategyName(command.StrategyName);
 
             bool started = false;

@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ZapretControl
 {
@@ -48,6 +50,9 @@ namespace ZapretControl
         public const string StartMarker = "# >>> Zapret Control (managed) >>>";
         public const string EndMarker = "# <<< Zapret Control (managed) <<<";
 
+        private static readonly Regex HostnamePattern = new Regex(
+            @"^[A-Za-z0-9][A-Za-z0-9._-]*$", RegexOptions.Compiled);
+
         public static string HostsPath
         {
             get
@@ -67,6 +72,12 @@ namespace ZapretControl
                 {
                     return new HostsCheckResult(
                         false, false, null, null, "Не удалось скачать hosts из репозитория.");
+                }
+                if (!IsValidHostsText(upstream))
+                {
+                    return new HostsCheckResult(
+                        false, false, null, null,
+                        "hosts из репозитория не похож на файл hosts.");
                 }
                 string hosts = ReadHosts();
                 string block;
@@ -103,6 +114,11 @@ namespace ZapretControl
             {
                 throw new InvalidOperationException("Нет данных hosts для записи.");
             }
+            if (!IsValidHostsText(upstreamText))
+            {
+                throw new InvalidOperationException(
+                    "Данные hosts не прошли проверку формата.");
+            }
             string hosts = ReadHosts();
             string backup = null;
             if (File.Exists(HostsPath))
@@ -131,6 +147,65 @@ namespace ZapretControl
                 }
             }
             return new HostsApplyResult(backup, lines);
+        }
+
+        // Accept only "IP hostname..." lines (IPv4 or IPv6, comments allowed).
+        // The upstream file is remote data, so it must not be able to inject
+        // arbitrary content into the system hosts file.
+        public static bool IsValidHostsText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+            int entries = 0;
+            foreach (string raw in SplitLines(text))
+            {
+                string line = raw.Trim();
+                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (line.Length > 512 || !IsValidHostsLine(line))
+                {
+                    return false;
+                }
+                entries++;
+                if (entries > 10000)
+                {
+                    return false;
+                }
+            }
+            return entries > 0;
+        }
+
+        private static bool IsValidHostsLine(string line)
+        {
+            string[] parts = line.Split(
+                new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+            {
+                return false;
+            }
+            IPAddress address;
+            if (!IPAddress.TryParse(parts[0], out address))
+            {
+                return false;
+            }
+            int names = 0;
+            for (int i = 1; i < parts.Length; i++)
+            {
+                if (parts[i].StartsWith("#", StringComparison.Ordinal))
+                {
+                    break;
+                }
+                if (!HostnamePattern.IsMatch(parts[i]))
+                {
+                    return false;
+                }
+                names++;
+            }
+            return names > 0;
         }
 
         private static string DownloadHosts()

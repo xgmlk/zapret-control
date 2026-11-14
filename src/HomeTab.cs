@@ -12,14 +12,25 @@ namespace ZapretControl
         private Label _iface;
         private Label _ifaceState;
         private Button _ifaceButton;
-        private Label _strategy;
-        private Label _payload;
-        private Label _task;
+        private Label _strategyCurrent;
+        private ComboBox _strategy;
+        private Button _applyStrategy;
+        private Button _advise;
+        private Label _advice;
+        private Label _checkSummary;
+        private Button _checkButton;
+        private Button _detailsButton;
         private IfaceStatus _ifaceStatus;
+        private HomeCheckReport _lastCheck;
         private bool _busy;
         private bool _refreshing;
-        private bool _checkTask;
+        private bool _updatingStrategy;
+        private bool _selectionDirty;
+        private string _currentStrategy;
         private int _generation;
+
+        public event Action<HomeCheckReport> CheckCompleted;
+        public event Action DetailsRequested;
 
         public override string TabTitle
         {
@@ -29,16 +40,16 @@ namespace ZapretControl
         public HomeTab()
         {
             Label caption = new Label();
-            caption.Text = "СЛУЖБА ZAPRET";
+            caption.Text = "ЗАЩИТА ZAPRET";
             caption.Font = new System.Drawing.Font("Segoe UI", 8.25F);
             caption.ForeColor = MutedColor;
             caption.BackColor = System.Drawing.Color.Transparent;
             caption.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            caption.SetBounds(0, 8, 852, 16);
+            caption.SetBounds(0, 4, 852, 16);
             Controls.Add(caption);
 
             _toggle = new ToggleSwitch();
-            _toggle.SetBounds(276, 28, 300, 130);
+            _toggle.SetBounds(276, 20, 300, 130);
             _toggle.ToggleRequested += OnToggleRequested;
             Controls.Add(_toggle);
 
@@ -47,7 +58,7 @@ namespace ZapretControl
             _status.ForeColor = TextColor;
             _status.BackColor = System.Drawing.Color.Transparent;
             _status.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            _status.SetBounds(0, 162, 852, 30);
+            _status.SetBounds(0, 154, 852, 30);
             Controls.Add(_status);
 
             _detail = new Label();
@@ -55,32 +66,53 @@ namespace ZapretControl
             _detail.ForeColor = MutedColor;
             _detail.BackColor = System.Drawing.Color.Transparent;
             _detail.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            _detail.SetBounds(0, 196, 852, 20);
+            _detail.SetBounds(0, 186, 852, 18);
             Controls.Add(_detail);
 
-            CardPanel ifaceCard = AddCard("ИНТЕРФЕЙС", 0, 232, 852, 120);
-            _iface = AddLabel(ifaceCard, "Сейчас: —", 20, 38, 600, 22);
+            CardPanel ifaceCard = AddCard("ИНТЕРФЕЙС", 0, 210, 852, 96);
+            _iface = AddLabel(ifaceCard, "Сейчас: —", 20, 32, 600, 22);
             _iface.Font = new System.Drawing.Font("Segoe UI", 9.25F);
-            _ifaceState = AddMutedLabel(ifaceCard, string.Empty, 20, 66, 620, 20);
+            _ifaceState = AddMutedLabel(ifaceCard, string.Empty, 20, 58, 660, 20);
             _ifaceButton = AddButton(
-                ifaceCard, "Обновить", 716, 46, 112, 32, OnSyncIface);
+                ifaceCard, "Обновить", 716, 30, 112, 32, OnSyncIface);
             _ifaceButton.Enabled = false;
             _ifaceButton.AccessibleName = "Обновить интерфейс в конфиге";
 
-            CardPanel infoCard = AddCard("СОСТОЯНИЕ", 0, 364, 852, 140);
-            AddMutedLabel(infoCard, "СТРАТЕГИЯ", 20, 36, 120, 16);
-            _strategy = AddLabel(infoCard, "—", 20, 54, 390, 22);
-            AddMutedLabel(infoCard, "PAYLOAD FLOWSEAL", 430, 36, 200, 16);
-            _payload = AddLabel(infoCard, "—", 430, 54, 390, 22);
-            AddMutedLabel(infoCard, "ЗАДАЧА СИНХРОНИЗАЦИИ", 20, 88, 240, 16);
-            _task = AddLabel(infoCard, "—", 20, 106, 390, 20);
-            AddMutedLabel(infoCard, "ВЕРСИЯ ПРИЛОЖЕНИЯ", 430, 88, 200, 16);
-            AddLabel(infoCard, AppInfo.Version, 430, 106, 390, 20);
+            CardPanel strategyCard = AddCard("СТРАТЕГИЯ", 0, 314, 852, 112);
+            _strategyCurrent = AddLabel(strategyCard, "Сейчас: —", 20, 32, 500, 18);
+            _strategyCurrent.Font = new System.Drawing.Font("Segoe UI", 9.25F);
+            _strategy = new ComboBox();
+            _strategy.DropDownStyle = ComboBoxStyle.DropDownList;
+            _strategy.SetBounds(20, 54, 500, 24);
+            _strategy.SelectedIndexChanged += OnStrategyChanged;
+            strategyCard.Controls.Add(_strategy);
+            _applyStrategy = AddButton(
+                strategyCard, "Применить", 532, 52, 140, 28, OnApplyStrategy);
+            _applyStrategy.AccessibleName = "Применить стратегию";
+            _advise = AddButton(
+                strategyCard, "Подобрать", 682, 52, 150, 28, OnAdvise);
+            _advise.AccessibleName = "Подобрать рабочую стратегию";
+            _advice = AddMutedLabel(strategyCard,
+                "Выберите стратегию или нажмите «Подобрать».",
+                20, 86, 812, 18);
+
+            CardPanel checkCard = AddCard("ПРОВЕРКА", 0, 430, 852, 84);
+            _checkSummary = AddLabel(
+                checkCard, "Проверка не выполнялась.", 20, 32, 450, 24);
+            _checkSummary.Font = new System.Drawing.Font(
+                "Segoe UI", 10.5F, System.Drawing.FontStyle.Bold);
+            _checkButton = AddButton(
+                checkCard, "Проверить всё", 492, 28, 150, 30, OnCheck);
+            _checkButton.AccessibleName = "Проверить соединения и hosts";
+            _detailsButton = AddButton(
+                checkCard, "Подробнее", 652, 28, 180, 30, OnDetails);
+            _detailsButton.AccessibleName = "Подробный отчёт на вкладке Тесты";
+            _detailsButton.Enabled = false;
         }
 
         public override void ActivateTab()
         {
-            _checkTask = true;
+            ReloadStrategies();
         }
 
         public override async void RefreshData()
@@ -91,15 +123,11 @@ namespace ZapretControl
             }
             _refreshing = true;
             int generation = ++_generation;
-            bool checkTask = _checkTask;
-            _checkTask = false;
             try
             {
                 ZapretStatus status = null;
                 IfaceStatus iface = null;
                 string strategy = string.Empty;
-                string payloadVersion = string.Empty;
-                bool? taskRegistered = null;
                 try
                 {
                     await Task.Run(delegate
@@ -107,11 +135,6 @@ namespace ZapretControl
                         status = ZapretService.GetStatus();
                         iface = IfaceStatusProvider.GetStatus();
                         strategy = ServiceManager.GetCurrentStrategyName();
-                        payloadVersion = PayloadManager.GetVersion(AppPaths.ResolvePayloadRoot());
-                        if (checkTask)
-                        {
-                            taskRegistered = SyncTask.IsRegistered();
-                        }
                     });
                 }
                 catch (Exception)
@@ -122,13 +145,7 @@ namespace ZapretControl
                 {
                     return;
                 }
-                ApplyStatus(status, iface, strategy, payloadVersion);
-                if (taskRegistered.HasValue)
-                {
-                    SetState(_task,
-                        taskRegistered.Value ? "зарегистрирована" : "не зарегистрирована",
-                        taskRegistered.Value ? GreenColor : AmberColor);
-                }
+                ApplyStatus(status, iface, strategy);
             }
             finally
             {
@@ -136,8 +153,7 @@ namespace ZapretControl
             }
         }
 
-        private void ApplyStatus(
-            ZapretStatus status, IfaceStatus iface, string strategy, string payloadVersion)
+        private void ApplyStatus(ZapretStatus status, IfaceStatus iface, string strategy)
         {
             System.Drawing.Color color;
             string title;
@@ -174,7 +190,7 @@ namespace ZapretControl
                 case ZapretState.NotFound:
                     color = MutedColor;
                     title = "Не найдена";
-                    detail = "Служба zapret не установлена — вкладка «Служба»";
+                    detail = "Служба zapret не установлена — примените стратегию ниже";
                     break;
                 case ZapretState.AccessDenied:
                     color = MutedColor;
@@ -190,18 +206,24 @@ namespace ZapretControl
             SetState(_status, title, color);
             _detail.Text = detail;
 
-            bool canToggle = status.State == ZapretState.Running || status.State == ZapretState.Stopped;
+            bool canToggle = status.State == ZapretState.Running ||
+                             status.State == ZapretState.Stopped;
             _toggle.Busy = !canToggle || _busy;
             if (canToggle)
             {
                 _toggle.Checked = status.State == ZapretState.Running;
             }
-            _strategy.Text = string.IsNullOrEmpty(strategy)
-                ? (status.State == ZapretState.NotFound ? "служба не установлена" : "не выбрана")
-                : strategy;
-            _payload.Text = string.IsNullOrEmpty(payloadVersion)
-                ? "неизвестна"
-                : payloadVersion;
+            _currentStrategy = strategy;
+            _strategyCurrent.Text = "Сейчас: " + (string.IsNullOrEmpty(strategy)
+                ? (status.State == ZapretState.NotFound
+                    ? "служба не установлена"
+                    : "не выбрана")
+                : strategy);
+            if (!_selectionDirty)
+            {
+                SelectStrategy(strategy);
+            }
+            UpdateActionState();
             ApplyIfaceStatus(iface);
         }
 
@@ -242,16 +264,429 @@ namespace ZapretControl
             }
         }
 
+        private void UpdateActionState()
+        {
+            bool hasStrategies = _strategy.Items.Count > 0;
+            _strategy.Enabled = !_busy && hasStrategies;
+            _applyStrategy.Enabled = !_busy && hasStrategies;
+            _advise.Enabled = !_busy && hasStrategies;
+            _checkButton.Enabled = !_busy;
+            _detailsButton.Enabled = !_busy && _lastCheck != null;
+        }
+
+        private void SetBusy(bool busy)
+        {
+            _busy = busy;
+            _toggle.Busy = busy;
+            if (busy)
+            {
+                _ifaceButton.Enabled = false;
+            }
+            UpdateActionState();
+        }
+
+        private void ReloadStrategies()
+        {
+            string selected = SelectedStrategy();
+            if (string.IsNullOrEmpty(selected))
+            {
+                selected = _currentStrategy;
+            }
+            if (string.IsNullOrEmpty(selected))
+            {
+                selected = ServiceManager.GetCurrentStrategyName();
+            }
+            _updatingStrategy = true;
+            try
+            {
+                _strategy.BeginUpdate();
+                _strategy.Items.Clear();
+                string root = AppPaths.ResolvePayloadRoot();
+                foreach (StrategyInfo info in StrategyParser.ListStrategies(root))
+                {
+                    _strategy.Items.Add(info);
+                }
+            }
+            finally
+            {
+                _strategy.EndUpdate();
+                _updatingStrategy = false;
+            }
+            if (_strategy.Items.Count == 0)
+            {
+                SetState(_advice, "Стратегии не найдены: проверьте payload.", RedColor);
+            }
+            else
+            {
+                if (_advice.Text.StartsWith("Стратегии не найдены",
+                    StringComparison.Ordinal))
+                {
+                    SetState(_advice,
+                        "Выберите стратегию или нажмите «Подобрать».", MutedColor);
+                }
+                if (!SelectStrategy(selected))
+                {
+                    SetSelectedIndex(0);
+                }
+            }
+            _selectionDirty = false;
+            UpdateActionState();
+        }
+
+        private void OnStrategyChanged(object sender, EventArgs e)
+        {
+            if (_updatingStrategy)
+            {
+                return;
+            }
+            _selectionDirty = true;
+            StrategyInfo info = _strategy.SelectedItem as StrategyInfo;
+            if (info != null)
+            {
+                SetState(_advice,
+                    "Выбрана: " + info.Name + ". Нажмите «Применить».", MutedColor);
+            }
+        }
+
+        private bool SelectStrategy(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+            for (int i = 0; i < _strategy.Items.Count; i++)
+            {
+                StrategyInfo info = _strategy.Items[i] as StrategyInfo;
+                if (info != null && info.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    SetSelectedIndex(i);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void SetSelectedIndex(int index)
+        {
+            _updatingStrategy = true;
+            try
+            {
+                _strategy.SelectedIndex = index;
+            }
+            finally
+            {
+                _updatingStrategy = false;
+            }
+        }
+
+        private string SelectedStrategy()
+        {
+            StrategyInfo info = _strategy.SelectedItem as StrategyInfo;
+            return info == null ? string.Empty : info.Name;
+        }
+
+        private async void OnApplyStrategy(object sender, EventArgs e)
+        {
+            if (_busy)
+            {
+                return;
+            }
+            string strategy = SelectedStrategy();
+            if (string.IsNullOrEmpty(strategy))
+            {
+                ShowInfo("Выберите стратегию.");
+                return;
+            }
+            if (NativeService.Exists(AppInfo.ServiceName) &&
+                strategy.Equals(ServiceManager.GetCurrentStrategyName(),
+                    StringComparison.OrdinalIgnoreCase) &&
+                ZapretService.GetStatus().State == ZapretState.Running)
+            {
+                ShowInfo("Эта стратегия уже применена.");
+                return;
+            }
+            await ApplyStrategy(strategy, true);
+        }
+
+        private async Task ApplyStrategy(string strategy, bool confirm)
+        {
+            if (_busy)
+            {
+                return;
+            }
+            string root = AppPaths.ResolvePayloadRoot();
+            string path = ServiceManager.FindStrategyPath(root, strategy);
+            if (string.IsNullOrEmpty(path))
+            {
+                ShowInfo("Стратегия не найдена: " + strategy);
+                return;
+            }
+            if (confirm && !Confirm(
+                "Применить стратегию \"" + strategy + "\" и запустить защиту?"))
+            {
+                return;
+            }
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
+            SetState(_status, "Применяю стратегию…", AmberColor);
+            _detail.Text = strategy;
+            SetState(_advice, "Применяю стратегию " + strategy + "…", AmberColor);
+
+            Exception error = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    int iface = AppPaths.GetServiceIfaceIndex();
+                    IfaceStatus status = IfaceStatusProvider.GetStatus();
+                    if (status.ActiveFound)
+                    {
+                        iface = status.ActiveIndex;
+                    }
+                    ServiceManager.Install(root, path, true, iface);
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
+            _selectionDirty = false;
+            ReloadStrategies();
+            RefreshData();
+            if (error != null)
+            {
+                SetState(_advice, "Ошибка: " + ShortError(error), RedColor);
+                ShowError("Не удалось применить стратегию", error);
+            }
+            else
+            {
+                SetState(_advice, "Стратегия применена: " + strategy + ".", GreenColor);
+            }
+        }
+
+        private async void OnAdvise(object sender, EventArgs e)
+        {
+            if (_busy)
+            {
+                return;
+            }
+            if (!Confirm(
+                "Подобрать рабочую стратегию?\n" +
+                "Проверка займёт 1–2 минуты и временно прервёт защиту."))
+            {
+                return;
+            }
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
+            SetState(_status, "Подбираю стратегию…", AmberColor);
+            _detail.Text = "Проверяю доступ к Discord, YouTube и Google.";
+            SetState(_advice, "Подбираю стратегию…", AmberColor);
+
+            StrategyAdviceReport report = null;
+            Exception error = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    report = StrategyAdvisor.Recommend(
+                        AppPaths.ResolvePayloadRoot(),
+                        new StrategyAdviceOptions(),
+                        ReportProgress);
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
+            _selectionDirty = false;
+            ReloadStrategies();
+            RefreshData();
+            if (error != null)
+            {
+                SetState(_advice, "Ошибка подбора: " + ShortError(error), RedColor);
+                ShowError("Не удалось подобрать стратегию", error);
+                return;
+            }
+            if (report == null)
+            {
+                SetState(_advice, "Подбор не вернул результат.", RedColor);
+                return;
+            }
+            string restoreWarning = report.ServiceWasRunning && !report.ServiceRestored
+                ? " Служба не вернулась после проверки."
+                : string.Empty;
+            if (!string.IsNullOrEmpty(report.RecommendedName))
+            {
+                SelectStrategy(report.RecommendedName);
+                _selectionDirty = true;
+                string text = "Рекомендация: " + report.RecommendedName +
+                    " (" + report.RecommendedPassed + " из " +
+                    report.RecommendedTotal + ")." + restoreWarning;
+                SetState(_advice, text, GreenColor);
+                if (Confirm(text + "\nПрименить и запустить защиту?"))
+                {
+                    await ApplyStrategy(report.RecommendedName, false);
+                }
+                else
+                {
+                    SetState(_advice,
+                        text + " Нажмите «Применить», чтобы использовать.",
+                        AmberColor);
+                }
+            }
+            else
+            {
+                string text = string.IsNullOrEmpty(report.Error)
+                    ? "Рабочая стратегия не найдена."
+                    : report.Error;
+                if (!string.IsNullOrEmpty(report.BestName))
+                {
+                    text += " Лучший результат: " + report.BestName +
+                        " (" + report.BestPassed + " из " + report.BestTotal + ").";
+                }
+                text += restoreWarning;
+                SetState(_advice, text, RedColor);
+                ShowInfo(text);
+            }
+        }
+
+        private void ReportProgress(string message)
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            if (InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke(new Action<string>(ReportProgress), message);
+                }
+                catch (Exception)
+                {
+                }
+                return;
+            }
+            SetState(_advice, message, AmberColor);
+        }
+
+        private async void OnCheck(object sender, EventArgs e)
+        {
+            if (_busy)
+            {
+                return;
+            }
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
+            SetState(_checkSummary, "Проверяю соединения и hosts…", AmberColor);
+
+            HomeCheckReport report = null;
+            Exception error = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    report = HomeCheck.Run();
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
+            if (error != null)
+            {
+                SetState(_checkSummary, "Ошибка: " + ShortError(error), RedColor);
+                RefreshData();
+                ShowError("Не удалось выполнить проверку", error);
+                return;
+            }
+            if (report == null)
+            {
+                SetState(_checkSummary, "Проверка не вернула результат.", RedColor);
+                RefreshData();
+                return;
+            }
+            _lastCheck = report;
+            ApplyCheckReport(report);
+            UpdateActionState();
+            if (CheckCompleted != null)
+            {
+                CheckCompleted(report);
+            }
+            RefreshData();
+        }
+
+        private void ApplyCheckReport(HomeCheckReport report)
+        {
+            System.Drawing.Color color = report.Passed == 0
+                ? RedColor
+                : (report.AllOk ? GreenColor : AmberColor);
+            SetState(_checkSummary, report.Summary, color);
+        }
+
+        private void OnDetails(object sender, EventArgs e)
+        {
+            if (DetailsRequested != null)
+            {
+                DetailsRequested();
+            }
+        }
+
         private async void OnSyncIface(object sender, EventArgs e)
         {
             if (_busy || _ifaceStatus == null)
             {
                 return;
             }
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
             _generation++;
-            _busy = true;
-            _toggle.Busy = true;
-            _ifaceButton.Enabled = false;
+            SetBusy(true);
             SetState(_ifaceState, "Обновляю интерфейс…", AmberColor);
 
             IfaceSyncResult result = null;
@@ -267,11 +702,15 @@ namespace ZapretControl
             {
                 error = ex;
             }
+            finally
+            {
+                OperationGuard.Exit();
+            }
             if (IsDisposed || Disposing)
             {
                 return;
             }
-            _busy = false;
+            SetBusy(false);
             RefreshData();
             if (error != null)
             {
@@ -311,10 +750,13 @@ namespace ZapretControl
                 return;
             }
             bool stopping = current.State == ZapretState.Running;
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
             _generation++;
-            _busy = true;
-            _toggle.Busy = true;
-            _ifaceButton.Enabled = false;
+            SetBusy(true);
             SetState(_status, stopping ? "Выключаю…" : "Включаю…", AmberColor);
             _detail.Text = "Подождите…";
 
@@ -342,11 +784,15 @@ namespace ZapretControl
             {
                 error = ex;
             }
+            finally
+            {
+                OperationGuard.Exit();
+            }
             if (IsDisposed || Disposing)
             {
                 return;
             }
-            _busy = false;
+            SetBusy(false);
             RefreshData();
             if (timedOut)
             {

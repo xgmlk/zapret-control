@@ -1137,6 +1137,63 @@ namespace ZapretControl
                 Console.Error.WriteLine("selftest failed: natural strategy sort");
                 return 1;
             }
+            List<StrategyInfo> sample = new List<StrategyInfo>();
+            sample.Add(new StrategyInfo("general (ALT2)", "C:\\z\\a.bat"));
+            sample.Add(new StrategyInfo("general", "C:\\z\\b.bat"));
+            sample.Add(new StrategyInfo("general (FAKE TLS AUTO)", "C:\\z\\c.bat"));
+            sample.Add(new StrategyInfo("other", "C:\\z\\d.bat"));
+            List<StrategyInfo> ordered = StrategyAdvisor.OrderCandidates(sample, "other");
+            if (ordered.Count != 4 ||
+                ordered[0].Name != "other" ||
+                ordered[1].Name != "general" ||
+                ordered[2].Name != "general (FAKE TLS AUTO)" ||
+                ordered[3].Name != "general (ALT2)")
+            {
+                Console.Error.WriteLine("selftest failed: strategy advisor order");
+                return 1;
+            }
+            if (!new SettingsData().AutoUpdatePayload)
+            {
+                Console.Error.WriteLine("selftest failed: AutoUpdatePayload default");
+                return 1;
+            }
+            if (!HostsManager.IsValidHostsText(
+                    "0.0.0.0 example.com\n2606:50c0:8000::154 example.org\n") ||
+                HostsManager.IsValidHostsText("<html>not a hosts file</html>") ||
+                HostsManager.IsValidHostsText("0.0.0.0\n"))
+            {
+                Console.Error.WriteLine("selftest failed: hosts validation");
+                return 1;
+            }
+            ConnectionTestReport skippedTests = new ConnectionTestReport("dpi");
+            skippedTests.Results.Add(new ConnectionTestResult("probe", true, "ok", 1));
+            HomeCheckReport skipped = new HomeCheckReport(
+                skippedTests, false, false, false, "не проверено", DateTime.Now);
+            if (skipped.Total != 1 || skipped.Passed != 1 || !skipped.AllOk ||
+                skipped.Summary != "1 из 1 · всё в порядке")
+            {
+                Console.Error.WriteLine("selftest failed: HomeCheck skipped hosts");
+                return 1;
+            }
+            if (!OperationGuard.TryEnter() || !OperationGuard.IsBusy)
+            {
+                Console.Error.WriteLine("selftest failed: OperationGuard enter");
+                return 1;
+            }
+            OperationGuard.Exit();
+            if (OperationGuard.IsBusy)
+            {
+                Console.Error.WriteLine("selftest failed: OperationGuard exit");
+                return 1;
+            }
+            ConnectionTestReport emptyTests = new ConnectionTestReport("dpi");
+            HomeCheckReport home = new HomeCheckReport(
+                emptyTests, true, true, false, "актуален", DateTime.Now);
+            if (home.Summary != "1 из 1 · всё в порядке" || !home.AllOk)
+            {
+                Console.Error.WriteLine("selftest failed: HomeCheckReport summary");
+                return 1;
+            }
             if (FakesManager.GetActiveName("game") != FakesManager.GameActive ||
                 FakesManager.GetActiveName("discord") != FakesManager.DiscordActive)
             {

@@ -75,35 +75,62 @@ namespace ZapretControl
 
         public override async void ActivateTab()
         {
-            SettingsData settings = Settings.Load();
-            _manifest.Text = settings.ManifestUrl;
-            _autoCheck.Checked = settings.AutoCheckUpdates;
-            _autoPayload.Checked = settings.AutoUpdatePayload;
+            LoadSettingsIntoControls();
             _appCurrent.Text = AppInfo.Version;
             _payloadCurrent.Text = PayloadManager.GetVersion(AppPaths.ResolvePayloadRoot());
             if (_payloadCurrent.Text.Length == 0)
             {
                 _payloadCurrent.Text = "неизвестна";
             }
-            if (_lastAutoCheck == DateTime.MinValue && !string.IsNullOrEmpty(settings.LastCheckUtc))
+            if (_result == null)
+            {
+                _appLatest.Text = "—";
+                _payloadLatest.Text = "—";
+            }
+            bool auto = _autoCheck.Checked &&
+                (DateTime.UtcNow - _lastAutoCheck).TotalHours >= 6;
+            if (auto && !_busy)
+            {
+                _lastAutoCheck = DateTime.UtcNow;
+                await CheckNow();
+            }
+        }
+
+        // Called once when the main window opens: a new installation should
+        // update payload automatically even if the user never visits this tab.
+        public async void CheckIfDue()
+        {
+            if (IsDisposed || Disposing || _busy)
+            {
+                return;
+            }
+            LoadSettingsIntoControls();
+            if (!_autoCheck.Checked)
+            {
+                return;
+            }
+            if ((DateTime.UtcNow - _lastAutoCheck).TotalHours < 6)
+            {
+                return;
+            }
+            _lastAutoCheck = DateTime.UtcNow;
+            await CheckNow();
+        }
+
+        private void LoadSettingsIntoControls()
+        {
+            SettingsData settings = Settings.Load();
+            _manifest.Text = settings.ManifestUrl;
+            _autoCheck.Checked = settings.AutoCheckUpdates;
+            _autoPayload.Checked = settings.AutoUpdatePayload;
+            if (_lastAutoCheck == DateTime.MinValue &&
+                !string.IsNullOrEmpty(settings.LastCheckUtc))
             {
                 DateTime parsed;
                 if (DateTime.TryParse(settings.LastCheckUtc, out parsed))
                 {
                     _lastAutoCheck = parsed.ToUniversalTime();
                 }
-            }
-            if (_result == null)
-            {
-                _appLatest.Text = "—";
-                _payloadLatest.Text = "—";
-            }
-            bool auto = settings.AutoCheckUpdates &&
-                (DateTime.UtcNow - _lastAutoCheck).TotalHours >= 6;
-            if (auto && !_busy)
-            {
-                _lastAutoCheck = DateTime.UtcNow;
-                await CheckNow();
             }
         }
 
@@ -220,6 +247,15 @@ namespace ZapretControl
             {
                 return;
             }
+            if (!OperationGuard.TryEnter())
+            {
+                string blocked = automatic
+                    ? "Автообновление payload отложено: выполняется другая операция."
+                    : "Другая операция уже выполняется. Подождите.";
+                SetState(_checkStatus, blocked, AmberColor);
+                AppendLog(blocked);
+                return;
+            }
             _busy = true;
             _updatePayload.Enabled = false;
             _updateApp.Enabled = false;
@@ -249,6 +285,10 @@ namespace ZapretControl
             {
                 error = ex;
             }
+            finally
+            {
+                OperationGuard.Exit();
+            }
             _busy = false;
             _updatePayload.Enabled = true;
             _updateApp.Enabled = _result.AppUpdateAvailable && AppPaths.IsInstalledLayout();
@@ -257,7 +297,10 @@ namespace ZapretControl
             {
                 SetState(_checkStatus, "Ошибка обновления: " + ShortError(error), RedColor);
                 AppendLog("Ошибка payload: " + ShortError(error));
-                ShowError("Не удалось обновить payload", error);
+                if (!automatic)
+                {
+                    ShowError("Не удалось обновить payload", error);
+                }
                 return;
             }
             if (result != null)
@@ -295,6 +338,12 @@ namespace ZapretControl
             {
                 return;
             }
+            if (!OperationGuard.TryEnter())
+            {
+                SetState(_checkStatus,
+                    "Другая операция уже выполняется. Подождите.", AmberColor);
+                return;
+            }
             _busy = true;
             _updateApp.Enabled = false;
             SetState(_checkStatus, "Скачиваю установщик…", AmberColor);
@@ -319,6 +368,10 @@ namespace ZapretControl
             catch (Exception ex)
             {
                 error = ex;
+            }
+            finally
+            {
+                OperationGuard.Exit();
             }
             _busy = false;
             if (error != null)
@@ -354,6 +407,12 @@ namespace ZapretControl
             {
                 return;
             }
+            if (!OperationGuard.TryEnter())
+            {
+                SetState(_checkStatus,
+                    "Другая операция уже выполняется. Подождите.", AmberColor);
+                return;
+            }
             _busy = true;
             SetState(_checkStatus, "Откатываю payload…", AmberColor);
             Exception error = null;
@@ -368,6 +427,10 @@ namespace ZapretControl
             catch (Exception ex)
             {
                 error = ex;
+            }
+            finally
+            {
+                OperationGuard.Exit();
             }
             _busy = false;
             if (error != null)

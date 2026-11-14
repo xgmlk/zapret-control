@@ -36,7 +36,7 @@ namespace ZapretControl
             TabStop = true;
             AccessibleRole = AccessibleRole.CheckButton;
             AccessibleName = "Zapret";
-            AccessibleDescription = "Включить или выключить службу zapret";
+            AccessibleDescription = "Включить или выключить защиту zapret";
 
             _labelFont = new Font("Segoe UI", 20f, FontStyle.Regular);
 

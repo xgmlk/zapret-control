@@ -78,6 +78,17 @@ namespace ZapretControl
                 new TestsTab()
             };
 
+            HomeTab homeTab = (HomeTab)_tabs[0];
+            TestsTab testsTab = (TestsTab)_tabs[7];
+            homeTab.CheckCompleted += delegate(HomeCheckReport report)
+            {
+                testsTab.ShowReport(report);
+            };
+            homeTab.DetailsRequested += delegate
+            {
+                ActivateTab(7);
+            };
+
             _tabButtons = new Button[_tabs.Length];
             for (int i = 0; i < _tabs.Length; i++)
             {
@@ -126,6 +137,7 @@ namespace ZapretControl
             {
                 ActivateTab(0);
                 RefreshActiveTab();
+                ((UpdatesTab)_tabs[5]).CheckIfDue();
             };
             FormClosing += OnFormClosing;
 
@@ -309,6 +321,17 @@ namespace ZapretControl
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
+            if (OperationGuard.IsBusy)
+            {
+                e.Cancel = true;
+                MessageBox.Show(
+                    this,
+                    "Дождитесь завершения операции со службой или payload.",
+                    "Zapret Control",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
             _timer.Stop();
         }
 

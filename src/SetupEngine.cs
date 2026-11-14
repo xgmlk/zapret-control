@@ -20,6 +20,7 @@ namespace ZapretControl
         public bool Repair { get; set; }
         public bool StartService { get; set; }
         public bool Force { get; set; }
+        public bool AutoPickStrategy { get; set; }
         public string PayloadZip { get; set; }
         public string PayloadDirectory { get; set; }
         public string PayloadSha256 { get; set; }
@@ -86,7 +87,8 @@ namespace ZapretControl
 
             if (value.InstallService)
             {
-                string strategyPath = ServiceManager.ChooseDefaultStrategy(payload, strategy);
+                string strategyPath = ChooseStrategyPath(
+                    payload, strategy, value.AutoPickStrategy, value.Silent, log);
                 if (string.IsNullOrEmpty(strategyPath))
                 {
                     throw new InvalidOperationException(
@@ -189,7 +191,8 @@ namespace ZapretControl
                 }
                 if (value.InstallService)
                 {
-                    string strategyPath = ServiceManager.ChooseDefaultStrategy(payload, strategy);
+                    string strategyPath = ChooseStrategyPath(
+                        payload, strategy, value.AutoPickStrategy, value.Silent, log);
                     if (string.IsNullOrEmpty(strategyPath))
                     {
                         throw new InvalidOperationException(
@@ -356,6 +359,12 @@ namespace ZapretControl
             }
             messages.Add("game_filter=OK");
 
+            if (!new SettingsData().AutoUpdatePayload)
+            {
+                throw new InvalidOperationException("SettingsData.AutoUpdatePayload");
+            }
+            messages.Add("settings=OK");
+
             string iface = StrategyParser.ApplyIface("--wf-iface=11 --wf-tcp=80", 7);
             if (iface != "--wf-iface=7 --wf-tcp=80")
             {
@@ -390,6 +399,56 @@ namespace ZapretControl
             }
             messages.Add("version=" + AppInfo.Version);
             return messages;
+        }
+
+        private static string ChooseStrategyPath(
+            string payload,
+            string preferred,
+            bool autoPick,
+            bool silent,
+            Action<string> log)
+        {
+            string path = ServiceManager.ChooseDefaultStrategy(payload, preferred);
+            if (string.IsNullOrEmpty(path) || !autoPick || silent)
+            {
+                return path;
+            }
+            string picked = AutoPickStrategy(
+                payload, System.IO.Path.GetFileNameWithoutExtension(path), log);
+            return string.IsNullOrEmpty(picked) ? path : picked;
+        }
+
+        private static string AutoPickStrategy(
+            string payload, string preferred, Action<string> log)
+        {
+            try
+            {
+                Log(log, "Подбор рабочей стратегии…");
+                StrategyAdviceReport report = StrategyAdvisor.Recommend(
+                    payload,
+                    new StrategyAdviceOptions
+                    {
+                        Preferred = preferred,
+                        MaxCandidates = 5
+                    },
+                    delegate(string message)
+                    {
+                        Log(log, message);
+                    });
+                if (!string.IsNullOrEmpty(report.RecommendedPath))
+                {
+                    Log(log, "Рекомендована стратегия " + report.RecommendedName + ".");
+                    return report.RecommendedPath;
+                }
+                Log(log, string.IsNullOrEmpty(report.Error)
+                    ? "Рабочая стратегия не найдена; используется " + preferred + "."
+                    : report.Error);
+            }
+            catch (Exception ex)
+            {
+                Log(log, "Подбор стратегии не выполнен: " + ex.Message);
+            }
+            return null;
         }
 
         private static void AcquirePayload(

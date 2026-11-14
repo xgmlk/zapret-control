@@ -13,12 +13,17 @@ namespace ZapretControl
         private const uint ScManagerConnect = 0x0001;
         private const uint ServiceAllAccess = 0x000F01FF;
         private const uint ServiceQueryStatus = 0x0004;
+        private const uint ServiceChangeConfig = 0x0002;
         private const uint ServiceWin32OwnProcess = 0x00000010;
         private const uint ServiceAutoStart = 0x00000002;
+        private const uint ServiceDemandStart = 0x00000003;
+        private const uint ServiceNoChange = 0xFFFFFFFF;
         private const uint ServiceErrorNormal = 0x00000001;
         private const uint ServiceConfigDescription = 1;
         private const int ErrorServiceDoesNotExist = 1060;
         private const int ErrorServiceMarkedForDelete = 1072;
+        private const string ServiceKeyPath =
+            @"SYSTEM\CurrentControlSet\Services\";
 
         [StructLayout(LayoutKind.Sequential)]
         private struct ServiceDescription
@@ -53,6 +58,20 @@ namespace ZapretControl
 
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool DeleteService(IntPtr service);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool ChangeServiceConfig(
+            IntPtr service,
+            uint serviceType,
+            uint startType,
+            uint errorControl,
+            string binaryPathName,
+            string loadOrderGroup,
+            IntPtr tagId,
+            string dependencies,
+            string serviceStartName,
+            string password,
+            string displayName);
 
         [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern bool ChangeServiceConfig2(
@@ -149,6 +168,64 @@ namespace ZapretControl
                 int code = Marshal.GetLastWin32Error();
                 return code != ErrorServiceDoesNotExist &&
                        code != ErrorServiceMarkedForDelete;
+            }
+            finally
+            {
+                if (service != IntPtr.Zero)
+                {
+                    CloseServiceHandle(service);
+                }
+                CloseServiceHandle(manager);
+            }
+        }
+
+        public static bool IsAutoStart(string serviceName)
+        {
+            try
+            {
+                using (RegistryKey key = Registry.LocalMachine.OpenSubKey(
+                    ServiceKeyPath + serviceName, false))
+                {
+                    object value = key == null ? null : key.GetValue("Start");
+                    return value is int && (int)value == (int)ServiceAutoStart;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        public static void SetAutoStart(string serviceName, bool autoStart)
+        {
+            IntPtr manager = OpenSCManager(null, null, ScManagerAllAccess);
+            if (manager == IntPtr.Zero)
+            {
+                throw Win32("Не удалось открыть менеджер служб");
+            }
+            IntPtr service = IntPtr.Zero;
+            try
+            {
+                service = OpenService(manager, serviceName, ServiceChangeConfig);
+                if (service == IntPtr.Zero)
+                {
+                    throw Win32("Не удалось открыть службу " + serviceName);
+                }
+                if (!ChangeServiceConfig(
+                    service,
+                    ServiceNoChange,
+                    autoStart ? ServiceAutoStart : ServiceDemandStart,
+                    ServiceNoChange,
+                    null,
+                    null,
+                    IntPtr.Zero,
+                    null,
+                    null,
+                    null,
+                    null))
+                {
+                    throw Win32("Не удалось изменить автозагрузку службы " + serviceName);
+                }
             }
             finally
             {

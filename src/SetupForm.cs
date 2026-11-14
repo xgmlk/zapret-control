@@ -10,6 +10,7 @@ namespace ZapretControl
         private readonly SetupOptions _options;
         private readonly string _mode;
         private ComboBox _strategy;
+        private CheckBox _autoPick;
         private CheckBox _service;
         private CheckBox _task;
         private CheckBox _shortcuts;
@@ -74,6 +75,10 @@ namespace ZapretControl
                 Controls.Add(_strategy);
                 PopulateStrategies();
                 top += 36;
+
+                _autoPick = CreateCheck(
+                    "Подобрать рабочую стратегию после установки (1–2 минуты)", top);
+                top += 26;
             }
 
             _service = CreateCheck("Установить и запустить службу zapret", top);
@@ -92,6 +97,10 @@ namespace ZapretControl
             _shortcuts.Checked = _options.CreateShortcuts;
             _launch.Checked = !_options.NoLaunch && !_options.Silent;
             _keepData.Checked = _options.KeepData;
+            if (_autoPick != null)
+            {
+                _autoPick.Checked = _options.AutoPickStrategy;
+            }
             bool uninstall = _mode == "uninstall";
             bool serviceOptions = !uninstall && _mode != "rollback";
             _service.Visible = serviceOptions;
@@ -99,6 +108,10 @@ namespace ZapretControl
             _shortcuts.Visible = serviceOptions;
             _launch.Visible = !uninstall && _mode != "rollback";
             _keepData.Visible = uninstall;
+            if (_autoPick != null)
+            {
+                _autoPick.Visible = serviceOptions;
+            }
 
             Label logLabel = new Label();
             logLabel.Text = "Журнал:";
@@ -110,7 +123,7 @@ namespace ZapretControl
             _log.ReadOnly = true;
             _log.ScrollBars = ScrollBars.Vertical;
             _log.BackColor = Color.FromArgb(252, 251, 248);
-            _log.SetBounds(26, top + 22, 548, 145);
+            _log.SetBounds(26, top + 22, 548, 128);
             Controls.Add(_log);
 
             _progress = new ProgressBar();
@@ -219,6 +232,10 @@ namespace ZapretControl
             _shortcuts.Enabled = false;
             _launch.Enabled = false;
             _keepData.Enabled = false;
+            if (_autoPick != null)
+            {
+                _autoPick.Enabled = false;
+            }
             _progress.Style = ProgressBarStyle.Marquee;
             _progress.MarqueeAnimationSpeed = 30;
             _status.Text = "Выполняется...";
@@ -237,6 +254,7 @@ namespace ZapretControl
             _options.CreateShortcuts = _shortcuts.Checked;
             _options.NoLaunch = !_launch.Checked;
             _options.KeepData = _keepData.Checked;
+            _options.AutoPickStrategy = _autoPick != null && _autoPick.Checked;
             _options.Silent = false;
 
             Task.Run(delegate
@@ -346,6 +364,10 @@ namespace ZapretControl
                 _shortcuts.Enabled = true;
                 _launch.Enabled = true;
                 _keepData.Enabled = true;
+                if (_autoPick != null)
+                {
+                    _autoPick.Enabled = true;
+                }
                 if (_strategy != null)
                 {
                     _strategy.Enabled = true;

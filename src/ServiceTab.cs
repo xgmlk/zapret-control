@@ -13,7 +13,12 @@ namespace ZapretControl
         private ComboBox _strategy;
         private Button _apply;
         private Button _restart;
-        private Button _remove;
+        private Button _toggleProtection;
+        private CheckBox _autoStart;
+        private Button _advanced;
+        private ContextMenuStrip _advancedMenu;
+        private ToolStripMenuItem _recreateItem;
+        private ToolStripMenuItem _removeItem;
         private Label _taskState;
         private Label _payloadRoot;
         private Label _payloadVersion;
@@ -21,6 +26,9 @@ namespace ZapretControl
         private bool _busy;
         private bool _refreshing;
         private bool _checkTask;
+        private bool _updatingStrategy;
+        private bool _selectionDirty;
+        private int _generation;
         private string _payload;
         private string _currentStrategy;
 
@@ -31,42 +39,64 @@ namespace ZapretControl
 
         public ServiceTab()
         {
-            CardPanel service = AddCard("СЛУЖБА ZAPRET", 0, 0, 852, 236);
-            _serviceState = AddLabel(service, "Проверка…", 20, 38, 260, 24);
-            _serviceState.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
-            _serviceDetail = AddMutedLabel(service, string.Empty, 280, 42, 552, 20);
+            CardPanel service = AddCard("ЗАЩИТА ZAPRET", 0, 0, 852, 252);
+            _serviceState = AddLabel(service, "Проверка…", 20, 34, 260, 24);
+            _serviceState.Font = new System.Drawing.Font(
+                "Segoe UI", 12F, System.Drawing.FontStyle.Bold);
+            _serviceDetail = AddMutedLabel(service, string.Empty, 280, 38, 552, 20);
 
-            AddMutedLabel(service, "СТРАТЕГИЯ", 20, 74, 160, 16);
+            AddMutedLabel(service, "СТРАТЕГИЯ", 20, 70, 160, 16);
             _strategy = new ComboBox();
             _strategy.DropDownStyle = ComboBoxStyle.DropDownList;
-            _strategy.SetBounds(20, 92, 500, 24);
+            _strategy.SetBounds(20, 88, 500, 24);
+            _strategy.SelectedIndexChanged += OnStrategyChanged;
             service.Controls.Add(_strategy);
-            _apply = AddButton(service, "Применить", 532, 90, 120, 28, OnApplyStrategy);
-            _restart = AddButton(service, "Перезапустить", 660, 90, 150, 28, OnRestart);
+            _apply = AddButton(
+                service, "Применить стратегию", 532, 86, 150, 28, OnApplyStrategy);
+            _restart = AddButton(
+                service, "Перезапустить", 690, 86, 142, 28, OnRestart);
 
-            AddButton(service, "Переустановить службу", 20, 132, 190, 30, OnReinstall);
-            _remove = AddButton(service, "Удалить службу", 220, 132, 150, 30, OnRemoveService);
-            AddMutedLabel(service,
-                "Пересоздаёт ImagePath и сохраняет --wf-iface.",
-                390, 138, 442, 20);
-            _imagePath = AddMutedLabel(service, string.Empty, 20, 172, 812, 18);
+            _autoStart = new CheckBox();
+            _autoStart.Text = "Запускать защиту при включении компьютера";
+            _autoStart.SetBounds(20, 124, 370, 22);
+            _autoStart.CheckedChanged += OnAutoStartChanged;
+            service.Controls.Add(_autoStart);
+            _toggleProtection = AddButton(
+                service, "Остановить защиту", 400, 120, 180, 30, OnToggleProtection);
+            _advanced = AddButton(
+                service, "Дополнительно…", 590, 120, 242, 30, OnAdvanced);
+            _imagePath = AddMutedLabel(service, string.Empty, 20, 164, 812, 18);
             _imagePath.AutoEllipsis = true;
+            AddMutedLabel(service,
+                "Пересоздание и удаление службы — в «Дополнительно».",
+                20, 190, 812, 18);
 
-            CardPanel task = AddCard("АВТОСИНХРОНИЗАЦИЯ ИНТЕРФЕЙСА", 0, 248, 852, 116);
-            _taskState = AddLabel(task, "Проверка…", 20, 42, 420, 22);
-            AddButton(task, "Зарегистрировать задачу", 20, 70, 200, 30, OnRegisterTask);
-            AddButton(task, "Удалить задачу", 230, 70, 150, 30, OnUnregisterTask);
+            _advancedMenu = new ContextMenuStrip();
+            _advancedMenu.ShowImageMargin = false;
+            _recreateItem = new ToolStripMenuItem(
+                "Пересоздать службу с текущей стратегией…");
+            _recreateItem.Click += OnRecreateService;
+            _advancedMenu.Items.Add(_recreateItem);
+            _advancedMenu.Items.Add(new ToolStripSeparator());
+            _removeItem = new ToolStripMenuItem("Удалить службу…");
+            _removeItem.Click += OnRemoveService;
+            _advancedMenu.Items.Add(_removeItem);
+
+            CardPanel task = AddCard("АВТОСИНХРОНИЗАЦИЯ ИНТЕРФЕЙСА", 0, 264, 852, 116);
+            _taskState = AddLabel(task, "Проверка…", 20, 38, 500, 22);
+            AddButton(task, "Включить", 20, 66, 120, 30, OnRegisterTask);
+            AddButton(task, "Отключить", 150, 66, 130, 30, OnUnregisterTask);
             AddMutedLabel(task,
-                "Задача Zapret-IfIndex-Sync запускает установленный CLI от SYSTEM при входе.",
-                400, 74, 432, 20);
+                "Обновляет --wf-iface при входе в систему.",
+                300, 70, 532, 20);
 
-            CardPanel payload = AddCard("PAYLOAD FLOWSEAL", 0, 376, 852, 144);
-            _payloadRoot = AddLabel(payload, "—", 20, 42, 812, 20);
+            CardPanel payload = AddCard("PAYLOAD FLOWSEAL", 0, 392, 852, 112);
+            _payloadRoot = AddLabel(payload, "—", 20, 32, 812, 20);
             _payloadRoot.AutoEllipsis = true;
-            _payloadVersion = AddMutedLabel(payload, string.Empty, 20, 68, 400, 18);
-            _payloadState = AddMutedLabel(payload, string.Empty, 20, 92, 500, 18);
-            AddButton(payload, "Открыть папку", 520, 86, 140, 30, OnOpenFolder);
-            AddButton(payload, "Проверить", 670, 86, 140, 30, OnValidatePayload);
+            _payloadVersion = AddMutedLabel(payload, string.Empty, 20, 56, 400, 18);
+            _payloadState = AddMutedLabel(payload, string.Empty, 20, 78, 500, 18);
+            AddButton(payload, "Открыть папку", 520, 72, 140, 28, OnOpenFolder);
+            AddButton(payload, "Проверить", 670, 72, 140, 28, OnValidatePayload);
         }
 
         public override void ActivateTab()
@@ -82,6 +112,7 @@ namespace ZapretControl
                 return;
             }
             _refreshing = true;
+            int generation = ++_generation;
             bool checkTask = _checkTask;
             _checkTask = false;
             try
@@ -92,6 +123,8 @@ namespace ZapretControl
                 string root = string.Empty;
                 string version = string.Empty;
                 bool? task = null;
+                bool installed = false;
+                bool autoStart = false;
                 try
                 {
                     await Task.Run(delegate
@@ -101,6 +134,8 @@ namespace ZapretControl
                         imagePath = AppPaths.GetServiceImagePath() ?? string.Empty;
                         root = AppPaths.ResolvePayloadRoot();
                         version = PayloadManager.GetVersion(root);
+                        installed = NativeService.Exists(AppInfo.ServiceName);
+                        autoStart = installed && NativeService.IsAutoStart(AppInfo.ServiceName);
                         if (checkTask)
                         {
                             task = SyncTask.IsRegistered();
@@ -111,7 +146,7 @@ namespace ZapretControl
                 {
                     return;
                 }
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || generation != _generation)
                 {
                     return;
                 }
@@ -120,24 +155,45 @@ namespace ZapretControl
                 _serviceState.Text = StateText(status.State);
                 _serviceState.ForeColor = status.State == ZapretState.Running
                     ? GreenColor
-                    : (status.State == ZapretState.Stopped ? RedColor : AmberColor);
+                    : (status.State == ZapretState.Stopped
+                        ? RedColor
+                        : (status.State == ZapretState.NotFound ? MutedColor : AmberColor));
                 _serviceDetail.Text = status.WinwsPid > 0
                     ? "PID winws.exe " + status.WinwsPid
-                    : status.ServiceStatus;
-                _imagePath.Text = "ImagePath: " + (imagePath.Length == 0 ? "не задан" : imagePath);
+                    : (status.State == ZapretState.NotFound
+                        ? "Служба zapret не установлена"
+                        : status.ServiceStatus);
+                _imagePath.Text = "Команда запуска: " +
+                    (imagePath.Length == 0 ? "не задана" : imagePath);
                 _payloadRoot.Text = root;
-                _payloadVersion.Text = "Версия: " + (version.Length == 0 ? "неизвестна" : version);
-                bool installed = NativeService.Exists(AppInfo.ServiceName);
-                _remove.Enabled = installed;
+                _payloadVersion.Text = "Версия: " +
+                    (version.Length == 0 ? "неизвестна" : version);
+                _removeItem.Enabled = installed;
+                _recreateItem.Enabled = _strategy.Items.Count > 0;
+                _autoStart.Enabled = installed;
+                _autoStart.Checked = autoStart;
+                _strategy.Enabled = !_busy && _strategy.Items.Count > 0;
+                _apply.Enabled = !_busy && _strategy.Items.Count > 0;
+                _advanced.Enabled = installed || _strategy.Items.Count > 0;
                 _restart.Enabled = status.State == ZapretState.Running ||
                                    status.State == ZapretState.Stopped;
+                _toggleProtection.Text = status.State == ZapretState.Running
+                    ? "Остановить защиту"
+                    : "Запустить защиту";
+                _toggleProtection.Enabled = status.State == ZapretState.Running ||
+                                            status.State == ZapretState.Stopped;
                 if (task.HasValue)
                 {
                     SetState(_taskState,
-                        task.Value ? "Задача зарегистрирована" : "Задача не зарегистрирована",
+                        task.Value
+                            ? "Автосинхронизация включена"
+                            : "Автосинхронизация выключена",
                         task.Value ? GreenColor : AmberColor);
                 }
-                SelectStrategy(strategy);
+                if (!_selectionDirty)
+                {
+                    SelectStrategy(strategy);
+                }
             }
             finally
             {
@@ -150,9 +206,9 @@ namespace ZapretControl
             switch (state)
             {
                 case ZapretState.Running:
-                    return "Работает";
+                    return "Защита включена";
                 case ZapretState.Stopped:
-                    return "Остановлена";
+                    return "Защита выключена";
                 case ZapretState.Starting:
                     return "Запускается…";
                 case ZapretState.Stopping:
@@ -160,7 +216,7 @@ namespace ZapretControl
                 case ZapretState.Paused:
                     return "Пауза";
                 case ZapretState.NotFound:
-                    return "Не установлена";
+                    return "Служба не установлена";
                 case ZapretState.AccessDenied:
                     return "Нет прав";
                 default:
@@ -168,33 +224,92 @@ namespace ZapretControl
             }
         }
 
-        private void ReloadStrategies()
+        private void SetBusy(bool busy)
         {
-            string root = AppPaths.ResolvePayloadRoot();
-            _payload = root;
-            _strategy.Items.Clear();
-            foreach (StrategyInfo info in StrategyParser.ListStrategies(root))
+            _busy = busy;
+            _strategy.Enabled = !busy && _strategy.Items.Count > 0;
+            if (!busy)
             {
-                _strategy.Items.Add(info);
+                return;
             }
-            string current = ServiceManager.GetCurrentStrategyName();
-            SelectStrategy(current);
+            _apply.Enabled = false;
+            _restart.Enabled = false;
+            _toggleProtection.Enabled = false;
+            _autoStart.Enabled = false;
+            _advanced.Enabled = false;
         }
 
-        private void SelectStrategy(string name)
+        private void ReloadStrategies()
+        {
+            string selected = SelectedStrategy();
+            if (string.IsNullOrEmpty(selected))
+            {
+                selected = _currentStrategy;
+            }
+            if (string.IsNullOrEmpty(selected))
+            {
+                selected = ServiceManager.GetCurrentStrategyName();
+            }
+            _updatingStrategy = true;
+            try
+            {
+                _strategy.BeginUpdate();
+                _strategy.Items.Clear();
+                string root = AppPaths.ResolvePayloadRoot();
+                foreach (StrategyInfo info in StrategyParser.ListStrategies(root))
+                {
+                    _strategy.Items.Add(info);
+                }
+            }
+            finally
+            {
+                _strategy.EndUpdate();
+                _updatingStrategy = false;
+            }
+            if (!SelectStrategy(selected) && _strategy.Items.Count > 0)
+            {
+                SetSelectedIndex(0);
+            }
+            _selectionDirty = false;
+            _apply.Enabled = _strategy.Items.Count > 0;
+        }
+
+        private void OnStrategyChanged(object sender, EventArgs e)
+        {
+            if (!_updatingStrategy)
+            {
+                _selectionDirty = true;
+            }
+        }
+
+        private bool SelectStrategy(string name)
         {
             if (string.IsNullOrEmpty(name))
             {
-                return;
+                return false;
             }
             for (int i = 0; i < _strategy.Items.Count; i++)
             {
                 StrategyInfo info = _strategy.Items[i] as StrategyInfo;
                 if (info != null && info.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
                 {
-                    _strategy.SelectedIndex = i;
-                    return;
+                    SetSelectedIndex(i);
+                    return true;
                 }
+            }
+            return false;
+        }
+
+        private void SetSelectedIndex(int index)
+        {
+            _updatingStrategy = true;
+            try
+            {
+                _strategy.SelectedIndex = index;
+            }
+            finally
+            {
+                _updatingStrategy = false;
             }
         }
 
@@ -210,16 +325,6 @@ namespace ZapretControl
 
         private async void OnApplyStrategy(object sender, EventArgs e)
         {
-            await ApplyStrategy(true);
-        }
-
-        private async void OnReinstall(object sender, EventArgs e)
-        {
-            await ApplyStrategy(true);
-        }
-
-        private async Task ApplyStrategy(bool restart)
-        {
             if (_busy)
             {
                 return;
@@ -230,44 +335,134 @@ namespace ZapretControl
                 ShowInfo("Выберите стратегию.");
                 return;
             }
-            if (!Confirm("Пересоздать службу zapret со стратегией \"" + strategy + "\"?"))
+            if (NativeService.Exists(AppInfo.ServiceName) &&
+                strategy.Equals(_currentStrategy, StringComparison.OrdinalIgnoreCase))
+            {
+                ShowInfo(ZapretService.GetStatus().State == ZapretState.Running
+                    ? "Эта стратегия уже применена."
+                    : "Стратегия уже выбрана. Нажмите «Запустить защиту».");
+                return;
+            }
+            await ApplyStrategy(strategy, true, true);
+        }
+
+        private async void OnRecreateService(object sender, EventArgs e)
+        {
+            if (_busy)
             {
                 return;
             }
-            _busy = true;
-            _serviceDetail.Text = "Пересоздаю службу: " + strategy + "…";
+            if (!Confirm(
+                "Пересоздать службу zapret с текущей стратегией?\n" +
+                "Защита прервётся на несколько секунд."))
+            {
+                return;
+            }
+            string strategy = string.IsNullOrEmpty(_currentStrategy)
+                ? SelectedStrategy()
+                : _currentStrategy;
+            if (string.IsNullOrEmpty(strategy))
+            {
+                ShowInfo("Сначала выберите стратегию.");
+                return;
+            }
+            await ApplyStrategy(strategy, false, false);
+        }
+
+        private async Task ApplyStrategy(string strategy, bool forceStart, bool confirm)
+        {
+            if (_busy)
+            {
+                return;
+            }
+            string root = AppPaths.ResolvePayloadRoot();
+            string path = ServiceManager.FindStrategyPath(root, strategy);
+            if (string.IsNullOrEmpty(path))
+            {
+                ShowInfo("Стратегия не найдена: " + strategy);
+                return;
+            }
+            bool installed = NativeService.Exists(AppInfo.ServiceName);
+            ZapretStatus current = ZapretService.GetStatus();
+            bool wasRunning = current.State == ZapretState.Running;
+            bool start = forceStart || wasRunning || !installed;
+            if (confirm)
+            {
+                string question = "Применить стратегию \"" + strategy + "\"?";
+                if (!installed)
+                {
+                    question += "\nСлужба будет установлена и запущена.";
+                }
+                else if (start)
+                {
+                    question += wasRunning
+                        ? "\nЗащита будет перезапущена."
+                        : "\nЗащита будет запущена.";
+                }
+                if (!Confirm(question))
+                {
+                    return;
+                }
+            }
+
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
+            _serviceDetail.Text = "Применяю стратегию: " + strategy + "…";
             _serviceDetail.ForeColor = AmberColor;
+            ServiceInstallResult result = null;
             Exception error = null;
             try
             {
-                string root = AppPaths.ResolvePayloadRoot();
-                int iface = AppPaths.GetServiceIfaceIndex();
-                IfaceStatus status = IfaceStatusProvider.GetStatus();
-                if (status.ActiveFound)
-                {
-                    iface = status.ActiveIndex;
-                }
-                string path = ServiceManager.FindStrategyPath(root, strategy);
-                if (string.IsNullOrEmpty(path))
-                {
-                    throw new InvalidOperationException("Стратегия не найдена: " + strategy);
-                }
-                bool wasRunning = ZapretService.GetStatus().State == ZapretState.Running;
                 await Task.Run(delegate
                 {
-                    ServiceManager.Install(root, path, restart || wasRunning, iface);
+                    int iface = AppPaths.GetServiceIfaceIndex();
+                    IfaceStatus status = IfaceStatusProvider.GetStatus();
+                    if (status.ActiveFound)
+                    {
+                        iface = status.ActiveIndex;
+                    }
+                    result = ServiceManager.Install(root, path, start, iface);
                 });
-                ShowInfo("Служба пересоздана со стратегией \"" + strategy + "\".");
             }
             catch (Exception ex)
             {
                 error = ex;
             }
-            _busy = false;
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
+            _selectionDirty = false;
             RefreshData();
             if (error != null)
             {
                 ShowError("Не удалось изменить службу", error);
+                return;
+            }
+            if (result != null)
+            {
+                _currentStrategy = result.StrategyName;
+                SelectStrategy(result.StrategyName);
+                string message = "Стратегия применена: " + result.StrategyName + ".";
+                if (result.Started)
+                {
+                    message += " Защита запущена.";
+                }
+                else if (start)
+                {
+                    message += " Защита не запустилась — проверьте журнал службы Windows.";
+                }
+                ShowInfo(message);
             }
         }
 
@@ -277,7 +472,15 @@ namespace ZapretControl
             {
                 return;
             }
-            _busy = true;
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
+            _serviceDetail.Text = "Перезапускаю защиту…";
+            _serviceDetail.ForeColor = AmberColor;
             Exception error = null;
             try
             {
@@ -304,12 +507,135 @@ namespace ZapretControl
             {
                 error = ex;
             }
-            _busy = false;
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
             RefreshData();
             if (error != null)
             {
-                ShowError("Не удалось перезапустить службу", error);
+                ShowError("Не удалось перезапустить защиту", error);
             }
+        }
+
+        private async void OnToggleProtection(object sender, EventArgs e)
+        {
+            if (_busy)
+            {
+                return;
+            }
+            ZapretStatus status = ZapretService.GetStatus();
+            if (status.State != ZapretState.Running && status.State != ZapretState.Stopped)
+            {
+                return;
+            }
+            bool stopping = status.State == ZapretState.Running;
+            if (stopping && !Confirm(
+                "Остановить защиту?\nОбход блокировок перестанет работать."))
+            {
+                return;
+            }
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
+            _serviceDetail.Text = stopping ? "Останавливаю защиту…" : "Запускаю защиту…";
+            _serviceDetail.ForeColor = AmberColor;
+            Exception error = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    if (stopping)
+                    {
+                        ZapretService.Stop();
+                    }
+                    else
+                    {
+                        ZapretService.Start();
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
+            RefreshData();
+            if (error != null)
+            {
+                ShowError(stopping
+                    ? "Не удалось остановить защиту"
+                    : "Не удалось запустить защиту", error);
+            }
+        }
+
+        private async void OnAutoStartChanged(object sender, EventArgs e)
+        {
+            if (_busy || _refreshing)
+            {
+                return;
+            }
+            bool autoStart = _autoStart.Checked;
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                RefreshData();
+                return;
+            }
+            _generation++;
+            SetBusy(true);
+            Exception error = null;
+            try
+            {
+                await Task.Run(delegate
+                {
+                    NativeService.SetAutoStart(AppInfo.ServiceName, autoStart);
+                });
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
+            RefreshData();
+            if (error != null)
+            {
+                ShowError("Не удалось изменить автозагрузку", error);
+            }
+        }
+
+        private void OnAdvanced(object sender, EventArgs e)
+        {
+            if (_advancedMenu == null)
+            {
+                return;
+            }
+            _advancedMenu.Show(_advanced, new System.Drawing.Point(0, _advanced.Height));
         }
 
         private async void OnRemoveService(object sender, EventArgs e)
@@ -324,7 +650,13 @@ namespace ZapretControl
             {
                 return;
             }
-            _busy = true;
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
             Exception error = null;
             try
             {
@@ -337,7 +669,16 @@ namespace ZapretControl
             {
                 error = ex;
             }
-            _busy = false;
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
+            _selectionDirty = false;
             RefreshData();
             if (error != null)
             {
@@ -351,7 +692,13 @@ namespace ZapretControl
             {
                 return;
             }
-            _busy = true;
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
             Exception error = null;
             try
             {
@@ -359,18 +706,29 @@ namespace ZapretControl
                 {
                     SyncTask.Register();
                 });
-                ShowInfo("Задача " + SyncTask.TaskName + " зарегистрирована.");
             }
             catch (Exception ex)
             {
                 error = ex;
             }
-            _busy = false;
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
             _checkTask = true;
             RefreshData();
             if (error != null)
             {
-                ShowError("Не удалось зарегистрировать задачу", error);
+                ShowError("Не удалось включить автосинхронизацию", error);
+            }
+            else
+            {
+                ShowInfo("Автосинхронизация интерфейса включена.");
             }
         }
 
@@ -380,11 +738,17 @@ namespace ZapretControl
             {
                 return;
             }
-            if (!Confirm("Удалить задачу " + SyncTask.TaskName + "?"))
+            if (!Confirm("Отключить автосинхронизацию интерфейса?"))
             {
                 return;
             }
-            _busy = true;
+            if (!OperationGuard.TryEnter())
+            {
+                ShowInfo("Другая операция уже выполняется. Подождите.");
+                return;
+            }
+            _generation++;
+            SetBusy(true);
             Exception error = null;
             try
             {
@@ -397,12 +761,24 @@ namespace ZapretControl
             {
                 error = ex;
             }
-            _busy = false;
+            finally
+            {
+                OperationGuard.Exit();
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            SetBusy(false);
             _checkTask = true;
             RefreshData();
             if (error != null)
             {
-                ShowError("Не удалось удалить задачу", error);
+                ShowError("Не удалось отключить автосинхронизацию", error);
+            }
+            else
+            {
+                ShowInfo("Автосинхронизация интерфейса отключена.");
             }
         }
 
@@ -410,7 +786,9 @@ namespace ZapretControl
         {
             try
             {
-                string root = string.IsNullOrEmpty(_payload) ? AppPaths.ResolvePayloadRoot() : _payload;
+                string root = string.IsNullOrEmpty(_payload)
+                    ? AppPaths.ResolvePayloadRoot()
+                    : _payload;
                 ProcessStartInfo info = new ProcessStartInfo();
                 info.FileName = "explorer.exe";
                 info.Arguments = "\"" + root + "\"";
@@ -425,7 +803,9 @@ namespace ZapretControl
 
         private void OnValidatePayload(object sender, EventArgs e)
         {
-            string root = string.IsNullOrEmpty(_payload) ? AppPaths.ResolvePayloadRoot() : _payload;
+            string root = string.IsNullOrEmpty(_payload)
+                ? AppPaths.ResolvePayloadRoot()
+                : _payload;
             string error;
             if (PayloadManager.ValidatePayloadRoot(root, out error))
             {
@@ -440,6 +820,16 @@ namespace ZapretControl
                 _payloadState.ForeColor = RedColor;
                 ShowError("Payload некорректен", new InvalidOperationException(error));
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _advancedMenu != null)
+            {
+                _advancedMenu.Dispose();
+                _advancedMenu = null;
+            }
+            base.Dispose(disposing);
         }
     }
 }

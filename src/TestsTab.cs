@@ -11,6 +11,7 @@ namespace ZapretControl
         private Button _standard;
         private Button _dpi;
         private bool _busy;
+        private HomeCheckReport _pendingReport;
 
         public override string TabTitle
         {
@@ -29,6 +30,28 @@ namespace ZapretControl
             _status = AddMutedLabel(card, "Тесты не запускались.", 380, 84, 452, 20);
             _output = AddTextBox(card, 20, 120, 812, 330, true);
             _output.Font = new System.Drawing.Font("Consolas", 8.5F);
+        }
+
+        public void ShowReport(HomeCheckReport report)
+        {
+            if (report == null || IsDisposed || Disposing)
+            {
+                return;
+            }
+            if (_busy)
+            {
+                _pendingReport = report;
+                return;
+            }
+            ApplyReport(report);
+        }
+
+        private void ApplyReport(HomeCheckReport report)
+        {
+            _output.Text = report.ToText();
+            SetState(_status, report.Summary, report.AllOk
+                ? GreenColor
+                : (report.Passed > 0 ? AmberColor : RedColor));
         }
 
         private void OnStandard(object sender, EventArgs e)
@@ -81,6 +104,12 @@ namespace ZapretControl
             SetState(_status,
                 "Готово: " + report.Passed + " из " + report.Results.Count + " успешно.",
                 all ? GreenColor : (report.Passed > 0 ? AmberColor : RedColor));
+            if (_pendingReport != null)
+            {
+                HomeCheckReport pending = _pendingReport;
+                _pendingReport = null;
+                _output.AppendText(Environment.NewLine + pending.ToText());
+            }
         }
     }
 }

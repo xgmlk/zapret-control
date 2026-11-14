@@ -86,9 +86,11 @@ function Select-Sources {
 # targets; the unused check below turns a forgotten file into a build error.
 $common = Select-Sources @(
     'AdminCheck', 'AppInfo', 'AppPaths', 'Settings', 'HashUtil', 'Downloader',
+    'OperationGuard',
     'ZapretService', 'IfaceStatus', 'NativeService', 'StrategyParser',
     'ServiceManager', 'PayloadManager', 'IpsetManager', 'FakesManager',
     'HostsManager', 'DiscordCache', 'Diagnostics', 'ConnectionTests',
+    'HomeCheck', 'StrategyAdvisor',
     'UpdateManifest', 'UpdateService', 'SignatureVerifier', 'AclInstaller',
     'SyncTask', 'PayloadPin', 'AssemblyInfo'
 )

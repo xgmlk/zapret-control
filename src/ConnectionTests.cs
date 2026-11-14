@@ -147,18 +147,37 @@ namespace ZapretControl
             }
         }
 
+        // Short probe used by the strategy advisor: winws.exe is already running
+        // as a temporary process, so the report must not ask the service state.
+        public static ConnectionTestReport RunProbe(string[] urls, int timeoutMs)
+        {
+            ConnectionTestReport report = new ConnectionTestReport("проверка");
+            RunDpiUrls(report, urls, timeoutMs, null);
+            return report;
+        }
+
+        // Compact home-tab check: same DPI hosts, shorter timeout than the
+        // full tests tab so a broken network does not stall the summary.
+        public static ConnectionTestReport RunHome()
+        {
+            ConnectionTestReport report = new ConnectionTestReport("быстрая");
+            string bypass = "bypass " + ZapretService.GetStatus().State;
+            RunDpiUrls(report, DpiUrls, 10000, bypass);
+            return report;
+        }
+
         private static void RunDpi(ConnectionTestReport report)
         {
-            try
-            {
-                ServicePointManager.SecurityProtocol =
-                    SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
-            }
-            catch (Exception)
-            {
-            }
-            ZapretStatus status = ZapretService.GetStatus();
-            foreach (string url in DpiUrls)
+            EnableTls();
+            string bypass = "bypass " + ZapretService.GetStatus().State;
+            RunDpiUrls(report, DpiUrls, 15000, bypass);
+        }
+
+        private static void RunDpiUrls(
+            ConnectionTestReport report, string[] urls, int timeoutMs, string bypass)
+        {
+            EnableTls();
+            foreach (string url in urls)
             {
                 Stopwatch watch = Stopwatch.StartNew();
                 try
@@ -167,8 +186,8 @@ namespace ZapretControl
                     request.Method = "GET";
                     request.UserAgent = "ZapretControl/" + AppInfo.Version;
                     request.Proxy = null;
-                    request.Timeout = 15000;
-                    request.ReadWriteTimeout = 15000;
+                    request.Timeout = timeoutMs;
+                    request.ReadWriteTimeout = timeoutMs;
                     request.KeepAlive = false;
                     request.AllowAutoRedirect = true;
                     request.MaximumAutomaticRedirections = 5;
@@ -179,7 +198,7 @@ namespace ZapretControl
                         report.Results.Add(new ConnectionTestResult(
                             url,
                             code >= 200 && code < 500,
-                            "HTTP " + code + ", bypass " + status.State,
+                            Detail("HTTP " + code, bypass),
                             watch.ElapsedMilliseconds));
                     }
                 }
@@ -194,7 +213,7 @@ namespace ZapretControl
                         report.Results.Add(new ConnectionTestResult(
                             url,
                             code >= 200 && code < 500,
-                            "HTTP " + code + " (WebException), bypass " + status.State,
+                            Detail("HTTP " + code + " (WebException)", bypass),
                             watch.ElapsedMilliseconds));
                     }
                     else
@@ -211,6 +230,23 @@ namespace ZapretControl
                         url, false, ex.GetType().Name + ": " + ex.Message,
                         watch.ElapsedMilliseconds));
                 }
+            }
+        }
+
+        private static string Detail(string text, string bypass)
+        {
+            return string.IsNullOrEmpty(bypass) ? text : text + ", " + bypass;
+        }
+
+        private static void EnableTls()
+        {
+            try
+            {
+                ServicePointManager.SecurityProtocol =
+                    SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+            }
+            catch (Exception)
+            {
             }
         }
 
