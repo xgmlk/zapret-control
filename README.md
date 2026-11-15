@@ -129,8 +129,8 @@ ZapretControl.Setup.exe --selftest
 {
   "schema": 1,
   "app": {
-    "version": "1.2.2",
-    "setup_url": "https://github.com/OWNER/REPO/releases/download/v1.2.2/ZapretControl.Setup.exe",
+    "version": "1.2.3",
+    "setup_url": "https://github.com/OWNER/REPO/releases/download/v1.2.3/ZapretControl.Setup.exe",
     "sha256": "...",
     "signer_thumbprint": "..."
   },
