@@ -77,7 +77,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
-          $header = (Get-Content -LiteralPath '.github\release-notes-header.md' -Raw -Encoding UTF8).TrimEnd()
           $files = @(
             'dist\ZapretControl.Setup.exe',
             'dist\release.json',
@@ -86,7 +85,7 @@ jobs:
           $arguments = @('release', 'create', $tag) + $files + @(
             '--title', ('Zapret Control ' + $tag),
             '--generate-notes',
-            '--notes', $header
+            '--notes-file', '.github\release-notes-header.md'
           )
           if ('${{ steps.signing.outputs.signed }}' -eq 'false') {
             $arguments += '--prerelease'
