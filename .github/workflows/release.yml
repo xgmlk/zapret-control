@@ -15,6 +15,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Previous tags are needed for the Full Changelog link.
+          fetch-depth: 0
 
       - name: Resolve version
         id: version
@@ -70,6 +73,35 @@ jobs:
           if ('${{ steps.signing.outputs.signed }}' -eq 'true') { $arguments['RequireSignature'] = $true }
           .\release.ps1 @arguments
 
+      - name: Compose release notes
+        shell: powershell
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $notesPath = Join-Path $env:GITHUB_WORKSPACE ('.github\release-notes\' + $tag + '.md')
+          if (-not (Test-Path -LiteralPath $notesPath)) {
+              throw "Missing full changelog: $notesPath. Add it before pushing the tag (see RELEASING.md)."
+          }
+          $header = [System.IO.File]::ReadAllText(
+              (Join-Path $env:GITHUB_WORKSPACE '.github\release-notes-header.md'),
+              [System.Text.Encoding]::UTF8)
+          $notes = [System.IO.File]::ReadAllText(
+              $notesPath, [System.Text.Encoding]::UTF8)
+          $previous = ''
+          $describe = & git describe --tags --abbrev=0 ($tag + '^') 2>$null
+          if ($LASTEXITCODE -eq 0 -and $describe) { $previous = $describe.Trim() }
+          $repo = '${{ github.repository }}'
+          if ($previous) {
+              $compare = "https://github.com/$repo/compare/$previous...$tag"
+          } else {
+              $compare = "https://github.com/$repo/releases/tag/$tag"
+          }
+          $body = $header.TrimEnd() + "`r`n`r`n## Что изменилось`r`n`r`n" +
+              $notes.TrimEnd() + "`r`n`r`n**Full Changelog**: $compare`r`n"
+          $out = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          [System.IO.File]::WriteAllText($out, $body,
+              (New-Object System.Text.UTF8Encoding($false)))
+          Write-Host "Release notes: $out"
+
       - name: Publish GitHub release
         shell: powershell
         env:
@@ -81,10 +113,10 @@ jobs:
             'dist\release.json',
             'dist\SHA256SUMS.txt'
           )
+          $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           $arguments = @('release', 'create', $tag) + $files + @(
             '--title', ('Zapret Control ' + $tag),
-            '--generate-notes',
-            '--notes-file', '.github\release-notes-header.md'
+            '--notes-file', $notesFile
           )
           if ('${{ steps.signing.outputs.signed }}' -eq 'false') {
             $arguments += '--prerelease'
