@@ -114,7 +114,8 @@ namespace ZapretControl
                 "Segoe UI", 10.5F, System.Drawing.FontStyle.Bold);
             _checkButton = AddButton(
                 checkCard, "Проверить всё", 492, 28, 150, 30, OnCheck);
-            _checkButton.AccessibleName = "Проверить соединения, видео YouTube и hosts";
+            _checkButton.AccessibleName =
+                "Проверить соединения, видео YouTube, DPI-заморозку и hosts";
             _detailsButton = AddButton(
                 checkCard, "Подробнее", 652, 28, 180, 30, OnDetails);
             _detailsButton.AccessibleName = "Подробный отчёт на вкладке Тесты";
@@ -618,9 +619,26 @@ namespace ZapretControl
             {
                 return;
             }
+            string ipset = IpsetManager.StateAny;
+            try
+            {
+                ipset = IpsetManager.GetState(AppPaths.ResolvePayloadRoot());
+            }
+            catch (Exception)
+            {
+            }
+            string ipsetNote = ipset == IpsetManager.StateAny
+                ? string.Empty
+                : "\nIPSet будет переключён в «любой» на время проверки и " +
+                  "восстановлен после неё.";
+            string curlNote = FreezeProbe.FindCurl() == null
+                ? "\ncurl.exe не найден: DPI-заморозка не будет проверена, " +
+                  "полная рекомендация невозможна."
+                : string.Empty;
             if (confirm && !Confirm(
                 "Подобрать рабочую стратегию?\n" +
-                "Проверка займёт 1–3 минуты и временно прервёт защиту."))
+                "Проверка займёт 1–4 минуты и временно прервёт защиту." +
+                ipsetNote + curlNote))
             {
                 return;
             }
@@ -632,7 +650,8 @@ namespace ZapretControl
             _generation++;
             SetBusy(true);
             SetState(_status, "Подбираю стратегию…", AmberColor);
-            _detail.Text = "Проверяю Discord, YouTube (страница, плеер, видео) и Google.";
+            _detail.Text = "Проверяю Discord, YouTube (страница, плеер, 2 видео), " +
+                           "Google и DPI-заморозку.";
             SetState(_advice, "Подбираю стратегию…", AmberColor);
 
             StrategyAdviceReport report = null;
@@ -693,6 +712,16 @@ namespace ZapretControl
             string restoreWarning = report.ServiceWasRunning && !report.ServiceRestored
                 ? "Служба не вернулась после проверки — включите защиту вручную."
                 : string.Empty;
+            if (!report.IpsetRestored)
+            {
+                restoreWarning += " IPSet не восстановлен — проверьте вкладку IPSet " +
+                                  "или перезапустите программу.";
+            }
+            if (!report.CurlAvailable)
+            {
+                restoreWarning += " curl.exe не найден: DPI-заморозка не проверена, " +
+                                  "полная рекомендация невозможна.";
+            }
             StrategyProbeResult selected;
             using (StrategyResultsForm form = new StrategyResultsForm(report))
             {
@@ -797,7 +826,8 @@ namespace ZapretControl
             }
             _generation++;
             SetBusy(true);
-            SetState(_checkSummary, "Проверяю соединения, видео YouTube и hosts…", AmberColor);
+            SetState(_checkSummary,
+                "Проверяю соединения, видео YouTube, DPI и hosts…", AmberColor);
 
             HomeCheckReport report = null;
             Exception error = null;

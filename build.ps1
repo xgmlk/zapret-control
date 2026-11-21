@@ -88,8 +88,10 @@ $common = Select-Sources @(
     'AdminCheck', 'AppInfo', 'AppPaths', 'Settings', 'HashUtil', 'Downloader',
     'OperationGuard', 'AtomicFile',
     'ZapretService', 'IfaceStatus', 'NativeService', 'StrategyParser',
-    'ServiceManager', 'PayloadManager', 'IpsetManager', 'FakesManager',
+    'ServiceManager', 'PayloadManager', 'IpsetManager', 'IpsetSwitch',
+    'FakesManager',
     'HostsManager', 'DiscordCache', 'Diagnostics', 'ConnectionTests',
+    'Concurrency', 'TlsHttp', 'StandardProbe', 'FreezeProbe', 'UnifiedCheck',
     'YouTubeProbe', 'YouTubeHttp', 'HomeCheck', 'StrategyAdvisor',
     'StrategyReportStore',
     'UpdateManifest', 'UpdateService', 'SignatureVerifier', 'AclInstaller',
@@ -99,7 +101,8 @@ $common = Select-Sources @(
 $guiSources = $common + (Select-Sources @(
     'Program', 'MainForm', 'ToggleSwitch', 'TrafficLightButton', 'UiDrawing',
     'HomeTab', 'ServiceTab', 'GameTab', 'IpsetTab', 'FakesTab', 'UpdatesTab',
-    'DiagnosticsTab', 'TestsTab', 'TabView', 'StrategyResultsForm', 'FirstRunForm'
+    'DiagnosticsTab', 'TestsTab', 'TabView', 'HelpForm',
+    'StrategyResultsForm', 'FirstRunForm'
 ))
 
 $cliSources = $common + (Select-Sources @('Cli'))

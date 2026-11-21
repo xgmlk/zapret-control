@@ -24,6 +24,9 @@ namespace ZapretControl
         private DateTime _lastAutoCheck;
         private bool _busy;
 
+        // Raised only by the silent startup check, not by manual checks.
+        public event Action<UpdateCheckResult> AppUpdateAvailable;
+
         public override string TabTitle
         {
             get { return "Обновления"; }
@@ -92,7 +95,7 @@ namespace ZapretControl
             if (auto && !_busy)
             {
                 _lastAutoCheck = DateTime.UtcNow;
-                await CheckNow();
+                await CheckNow(false);
             }
         }
 
@@ -114,7 +117,7 @@ namespace ZapretControl
                 return;
             }
             _lastAutoCheck = DateTime.UtcNow;
-            await CheckNow();
+            await CheckNow(true);
         }
 
         private void LoadSettingsIntoControls()
@@ -136,10 +139,10 @@ namespace ZapretControl
 
         private async void OnCheck(object sender, EventArgs e)
         {
-            await CheckNow();
+            await CheckNow(false);
         }
 
-        private async Task CheckNow()
+        private async Task CheckNow(bool notify)
         {
             if (_busy)
             {
@@ -165,6 +168,10 @@ namespace ZapretControl
             catch (Exception ex)
             {
                 error = ex;
+            }
+            if (IsDisposed || Disposing)
+            {
+                return;
             }
             _busy = false;
             _check.Enabled = true;
@@ -221,6 +228,16 @@ namespace ZapretControl
             if (_autoPayload.Checked && result.PayloadUpdateAvailable)
             {
                 await ApplyPayload(true);
+            }
+
+            // Only the silent startup check notifies; the tab itself already
+            // shows the same result when the user opens it.
+            if (notify &&
+                result.AppUpdateAvailable &&
+                AppPaths.IsInstalledLayout() &&
+                AppUpdateAvailable != null)
+            {
+                AppUpdateAvailable(result);
             }
         }
 

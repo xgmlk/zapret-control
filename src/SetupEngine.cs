@@ -475,6 +475,16 @@ namespace ZapretControl
                     {
                         Log(log, message);
                     });
+                if (report.Results.Count > 0 && !report.CurlAvailable)
+                {
+                    Log(log, "curl.exe не найден: DPI-заморозка не проверена, " +
+                             "полной рекомендации нет.");
+                }
+                if (report.IpsetSwitched && !report.IpsetRestored)
+                {
+                    Log(log, "IPSet не восстановлен после подбора; будет " +
+                             "восстановлен при следующем запуске.");
+                }
                 if (report.Results.Count > 0 && !StrategyReportStore.Save(report))
                 {
                     Log(log, "Не удалось сохранить результат подбора для главной.");

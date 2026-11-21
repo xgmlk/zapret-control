@@ -12,7 +12,9 @@ namespace ZapretControl
     internal static class YouTubeHttp
     {
         internal const int FragmentBytes = 393216;
-        private const int MinFragmentBytes = FragmentBytes * 3 / 4;
+        // 288 KB: a fragment smaller than this does not prove that media
+        // traffic survives DPI, even when HTTP 200/206 arrives.
+        internal const int MinFragmentBytes = 288 * 1024;
 
         internal static void EnableTls()
         {

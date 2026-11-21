@@ -76,6 +76,8 @@ namespace ZapretControl
                 return 0;
             }
 
+            IpsetSwitch.RecoverStaleSafe();
+
             try
             {
                 if (options.Silent || mode == "update-silent" || mode == "rollback")

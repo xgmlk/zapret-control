@@ -11,45 +11,64 @@ namespace ZapretControl
     {
         public string Name { get; private set; }
         public string Path { get; private set; }
-        public bool DiscordOk { get; private set; }
-        public bool YouTubePageOk { get; private set; }
-        public bool YouTubePlayerOk { get; private set; }
-        public bool YouTubeVideoOk { get; private set; }
-        public bool GoogleOk { get; private set; }
-        public int VideoAttempts { get; private set; }
-        public int VideoSuccesses { get; private set; }
-        public long ElapsedMs { get; private set; }
-        public string Detail { get; private set; }
+        public int Order { get; internal set; }
 
-        public StrategyProbeResult(
-            string name,
-            string path,
-            bool discordOk,
-            bool youtubePageOk,
-            bool youtubePlayerOk,
-            bool youtubeVideoOk,
-            int videoSuccesses,
-            int videoAttempts,
-            bool googleOk,
-            long elapsedMs,
-            string detail)
+        public bool DiscordOk { get; internal set; }
+        public int DiscordPassed { get; internal set; }
+        public int DiscordTotal { get; internal set; }
+        public bool YouTubeHostsOk { get; internal set; }
+        public int YouTubeHostsPassed { get; internal set; }
+        public int YouTubeHostsTotal { get; internal set; }
+        public bool YouTubePageOk { get; internal set; }
+        public bool YouTubePlayerOk { get; internal set; }
+        public bool YouTubeVideoOk { get; internal set; }
+        public bool GoogleOk { get; internal set; }
+        public int GooglePassed { get; internal set; }
+        public int GoogleTotal { get; internal set; }
+        public bool CloudflareOk { get; internal set; }
+        public int CloudflarePassed { get; internal set; }
+        public int CloudflareTotal { get; internal set; }
+
+        public bool FreezeAvailable { get; internal set; }
+        public bool FreezeChecked { get; internal set; }
+        public bool FreezeOk { get; internal set; }
+        public int FreezeBlocked { get; internal set; }
+        public int FreezeTargets { get; internal set; }
+        public int FreezeOkCount { get; internal set; }
+        public int FreezeErrors { get; internal set; }
+
+        public bool Tls12Attempted { get; internal set; }
+        public bool Tls12Ok { get; internal set; }
+        public bool Tls13Attempted { get; internal set; }
+        public bool Tls13Ok { get; internal set; }
+        public bool Tls13EnvironmentUnsupported { get; internal set; }
+
+        public int VideoSuccesses { get; internal set; }
+        public int VideoAttempts { get; internal set; }
+        public long ElapsedMs { get; internal set; }
+        public string Detail { get; internal set; }
+        public string FreezeDetail { get; internal set; }
+        public string VideoDetail { get; internal set; }
+        public string HostsDetail { get; internal set; }
+
+        public StrategyProbeResult(string name, string path)
         {
-            Name = name;
-            Path = path;
-            DiscordOk = discordOk;
-            YouTubePageOk = youtubePageOk;
-            YouTubePlayerOk = youtubePlayerOk;
-            YouTubeVideoOk = youtubeVideoOk;
-            VideoSuccesses = videoSuccesses;
-            VideoAttempts = videoAttempts;
-            GoogleOk = googleOk;
-            ElapsedMs = elapsedMs;
-            Detail = detail ?? string.Empty;
+            Name = name ?? string.Empty;
+            Path = path ?? string.Empty;
+            Detail = string.Empty;
+            FreezeDetail = string.Empty;
+            VideoDetail = string.Empty;
+            HostsDetail = string.Empty;
+        }
+
+        public bool YouTubeStageOk
+        {
+            get { return YouTubeHostsOk && YouTubePageOk; }
         }
 
         public int Total
         {
-            get { return 4; }
+            get { return 6; }
         }
 
         public int Passed
@@ -61,7 +80,11 @@ namespace ZapretControl
                 {
                     count++;
                 }
-                if (YouTubePageOk)
+                if (YouTubeStageOk)
+                {
+                    count++;
+                }
+                if (YouTubePlayerOk)
                 {
                     count++;
                 }
@@ -73,13 +96,20 @@ namespace ZapretControl
                 {
                     count++;
                 }
+                if (FreezeOk)
+                {
+                    count++;
+                }
                 return count;
             }
         }
 
         public bool Ok
         {
-            get { return Passed == Total; }
+            get
+            {
+                return Passed == Total && FreezeAvailable && FreezeChecked;
+            }
         }
 
         public bool PartiallyOk
@@ -99,6 +129,69 @@ namespace ZapretControl
             }
         }
 
+        public string YouTubeDisplay
+        {
+            get
+            {
+                string hosts = Counts(YouTubeHostsPassed, YouTubeHostsTotal);
+                if (YouTubeHostsTotal == 0)
+                {
+                    return "нет";
+                }
+                return hosts + " · " + (YouTubePageOk ? "OK" : "нет");
+            }
+        }
+
+        public string FreezeDisplay
+        {
+            get
+            {
+                if (!FreezeAvailable)
+                {
+                    // Old reports and a missing curl.exe both have no targets;
+                    // the report header carries the explicit curl warning.
+                    return FreezeTargets > 0 ? "нет curl" : "—";
+                }
+                if (!FreezeChecked)
+                {
+                    return "н/д";
+                }
+                if (!FreezeOk)
+                {
+                    return "блок " + FreezeBlocked;
+                }
+                return "OK";
+            }
+        }
+
+        public string Tls12Display
+        {
+            get
+            {
+                if (!Tls12Attempted)
+                {
+                    return "—";
+                }
+                return Tls12Ok ? "OK" : "нет";
+            }
+        }
+
+        public string Tls13Display
+        {
+            get
+            {
+                if (!Tls13Attempted)
+                {
+                    return "—";
+                }
+                if (Tls13EnvironmentUnsupported && !Tls13Ok)
+                {
+                    return "н/д";
+                }
+                return Tls13Ok ? "OK" : "нет";
+            }
+        }
+
         public string StatusText
         {
             get
@@ -109,7 +202,9 @@ namespace ZapretControl
                 }
                 if (PartiallyOk)
                 {
-                    return "работает частично";
+                    return FreezeAvailable
+                        ? "работает частично"
+                        : "частично (DPI не проверен)";
                 }
                 return "не работает";
             }
@@ -124,11 +219,14 @@ namespace ZapretControl
         {
             get
             {
-                return "Discord: " + YesNo(DiscordOk) +
-                       " · YouTube: " + YesNo(YouTubePageOk) +
-                       " · плеер: " + YesNo(YouTubePlayerOk) +
-                       " · видео: " + VideoDisplay +
-                       " · Google: " + YesNo(GoogleOk);
+                return "Discord " + Counts(DiscordPassed, DiscordTotal) +
+                       " · YouTube хосты " + Counts(YouTubeHostsPassed, YouTubeHostsTotal) +
+                       ", страница " + YesNo(YouTubePageOk) +
+                       ", плеер " + YesNo(YouTubePlayerOk) +
+                       ", видео " + VideoDisplay +
+                       " · Google " + Counts(GooglePassed, GoogleTotal) +
+                       " · DPI " + FreezeDisplay +
+                       " · Cloudflare " + Counts(CloudflarePassed, CloudflareTotal);
             }
         }
 
@@ -141,6 +239,41 @@ namespace ZapretControl
             }
         }
 
+        internal void SetCounts(
+            int discordPassed, int discordTotal,
+            int youtubeHostsPassed, int youtubeHostsTotal,
+            int googlePassed, int googleTotal,
+            int cloudflarePassed, int cloudflareTotal)
+        {
+            DiscordPassed = discordPassed;
+            DiscordTotal = discordTotal;
+            YouTubeHostsPassed = youtubeHostsPassed;
+            YouTubeHostsTotal = youtubeHostsTotal;
+            GooglePassed = googlePassed;
+            GoogleTotal = googleTotal;
+            CloudflarePassed = cloudflarePassed;
+            CloudflareTotal = cloudflareTotal;
+        }
+
+        internal void SetFreeze(
+            bool available, bool checkedValue, bool ok,
+            int blocked, int targets, int okCount, int errors, string detail)
+        {
+            FreezeAvailable = available;
+            FreezeChecked = checkedValue;
+            FreezeOk = ok;
+            FreezeBlocked = blocked;
+            FreezeTargets = targets;
+            FreezeOkCount = okCount;
+            FreezeErrors = errors;
+            FreezeDetail = detail ?? string.Empty;
+        }
+
+        private static string Counts(int passed, int total)
+        {
+            return total == 0 ? "—" : passed + "/" + total;
+        }
+
         private static string YesNo(bool value)
         {
             return value ? "OK" : "нет";
@@ -151,6 +284,7 @@ namespace ZapretControl
     {
         public int MaxCandidates { get; set; }
         public int RequestTimeoutMs { get; set; }
+        public int GateLimit { get; set; }
         public bool RestoreService { get; set; }
         public string Preferred { get; set; }
 
@@ -159,7 +293,8 @@ namespace ZapretControl
             // 0 means the whole .bat pool. The advisor must not stop at the
             // first page-level success anymore.
             MaxCandidates = 0;
-            RequestTimeoutMs = 6000;
+            RequestTimeoutMs = 4000;
+            GateLimit = 16;
             RestoreService = true;
             Preferred = string.Empty;
         }
@@ -178,6 +313,13 @@ namespace ZapretControl
         public string Error { get; private set; }
         public bool ServiceWasRunning { get; private set; }
         public bool ServiceRestored { get; private set; }
+        public string IpsetMode { get; private set; }
+        public string IpsetOriginal { get; private set; }
+        public bool IpsetSwitched { get; private set; }
+        public bool IpsetRestored { get; private set; }
+        public bool CurlAvailable { get; private set; }
+        public bool FreezeSuiteOffline { get; private set; }
+        public long ElapsedMs { get; private set; }
         public DateTime CheckedAtUtc { get; private set; }
 
         public StrategyAdviceReport()
@@ -187,6 +329,8 @@ namespace ZapretControl
             RecommendedPath = string.Empty;
             BestName = string.Empty;
             Error = string.Empty;
+            IpsetMode = string.Empty;
+            IpsetOriginal = string.Empty;
             CheckedAtUtc = DateTime.UtcNow;
         }
 
@@ -241,6 +385,15 @@ namespace ZapretControl
             Error = error ?? string.Empty;
         }
 
+        internal void AppendError(string error)
+        {
+            if (string.IsNullOrEmpty(error))
+            {
+                return;
+            }
+            Error = string.IsNullOrEmpty(Error) ? error : Error + " " + error;
+        }
+
         internal void SetServiceWasRunning(bool wasRunning)
         {
             ServiceWasRunning = wasRunning;
@@ -249,6 +402,37 @@ namespace ZapretControl
         internal void SetServiceRestored(bool restored)
         {
             ServiceRestored = restored;
+        }
+
+        internal void SetIpset(string original, string mode)
+        {
+            IpsetOriginal = original ?? string.Empty;
+            IpsetMode = mode ?? string.Empty;
+        }
+
+        internal void SetIpsetSwitched(bool switched)
+        {
+            IpsetSwitched = switched;
+        }
+
+        internal void SetIpsetRestored(bool restored)
+        {
+            IpsetRestored = restored;
+        }
+
+        internal void SetCurlAvailable(bool available)
+        {
+            CurlAvailable = available;
+        }
+
+        internal void SetFreezeSuiteOffline(bool offline)
+        {
+            FreezeSuiteOffline = offline;
+        }
+
+        internal void SetElapsedMs(long elapsedMs)
+        {
+            ElapsedMs = elapsedMs;
         }
 
         public string ToText()
@@ -276,6 +460,18 @@ namespace ZapretControl
                 builder.AppendLine("Лучший частичный результат: " + BestName + " (" +
                     BestPassed + " из " + BestTotal + ").");
             }
+            if (!string.IsNullOrEmpty(IpsetMode))
+            {
+                builder.AppendLine("IPSet: " + IpsetMode + " (исходное " +
+                    (string.IsNullOrEmpty(IpsetOriginal) ? "?" : IpsetOriginal) +
+                    ", восстановлен: " + (IpsetRestored ? "да" : "нет") + ").");
+            }
+            builder.AppendLine("curl.exe: " + (CurlAvailable ? "есть" : "нет") +
+                " · список suite: " +
+                (FreezeSuiteOffline ? "оффлайн" : "онлайн") + ".");
+            builder.AppendLine("Время: " +
+                (ElapsedMs / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) +
+                " с.");
             if (!string.IsNullOrEmpty(Error))
             {
                 builder.AppendLine("Ошибка: " + Error);
@@ -284,10 +480,10 @@ namespace ZapretControl
         }
     }
 
-    // Tests candidate .bat strategies by starting winws.exe directly and probing
-    // Discord, the YouTube watch page, real YouTube media bytes and Google. All
-    // candidates are tested; the result is a ranked list, not the first match.
-    // The service is stopped for the duration and restored afterwards.
+    // Tests candidate .bat strategies by starting winws.exe directly. Inside
+    // one strategy all independent checks run in parallel behind a 16-slot
+    // gate; strategies stay sequential because they share WinDivert filters.
+    // The service and IPSet are restored in finally.
     public static class StrategyAdvisor
     {
         private static readonly string[] PriorityNames = new string[]
@@ -305,7 +501,86 @@ namespace ZapretControl
             "general (EXP)"
         };
 
+        // A named mutex prevents two processes (GUI, CLI, Setup) from stopping
+        // the service and switching IPSet at the same time.
         public static StrategyAdviceReport Recommend(
+            string payloadRoot,
+            StrategyAdviceOptions options,
+            Action<string> log)
+        {
+            Mutex mutex = null;
+            bool acquired = false;
+            try
+            {
+                try
+                {
+                    mutex = new Mutex(false, @"Global\ZapretControl.Advisor");
+                }
+                catch (Exception)
+                {
+                    try
+                    {
+                        mutex = new Mutex(false, @"Local\ZapretControl.Advisor");
+                    }
+                    catch (Exception)
+                    {
+                        mutex = null;
+                    }
+                }
+                if (mutex == null)
+                {
+                    acquired = true;
+                }
+                else
+                {
+                    try
+                    {
+                        acquired = mutex.WaitOne(0, false);
+                    }
+                    catch (AbandonedMutexException)
+                    {
+                        acquired = true;
+                    }
+                    catch (Exception)
+                    {
+                        // A restricted environment must not block the advisor.
+                        acquired = true;
+                    }
+                }
+                if (!acquired)
+                {
+                    StrategyAdviceReport busy = new StrategyAdviceReport();
+                    busy.SetError("Другой подбор стратегии уже выполняется.");
+                    return busy;
+                }
+                return RecommendCore(payloadRoot, options, log);
+            }
+            finally
+            {
+                if (acquired && mutex != null)
+                {
+                    try
+                    {
+                        mutex.ReleaseMutex();
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+                if (mutex != null)
+                {
+                    try
+                    {
+                        mutex.Dispose();
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+        }
+
+        private static StrategyAdviceReport RecommendCore(
             string payloadRoot,
             StrategyAdviceOptions options,
             Action<string> log)
@@ -336,13 +611,40 @@ namespace ZapretControl
                 candidates = candidates.GetRange(0, max);
             }
 
+            Stopwatch watch = Stopwatch.StartNew();
             GameFilterSettings game = GameFilterSettings.Load(payloadRoot);
             int iface = ResolveIface();
+            string curl = FreezeProbe.FindCurl();
+            report.SetCurlAvailable(curl != null);
+            bool suiteOffline = false;
+            List<FreezeTarget> suite = new List<FreezeTarget>();
+            if (curl != null)
+            {
+                suite = FreezeProbe.LoadSuite(
+                    value.RequestTimeoutMs, out suiteOffline);
+                report.SetFreezeSuiteOffline(suiteOffline);
+                if (suiteOffline)
+                {
+                    Log(log, "Список suite.v2.json недоступен: используется встроенный.");
+                }
+            }
+            else
+            {
+                Log(log, "curl.exe не найден: DPI-заморозка не будет проверена.");
+            }
+
             ZapretStatus before = ZapretService.GetStatus();
             bool wasRunning = before.State == ZapretState.Running ||
                               before.State == ZapretState.Starting;
             report.SetServiceWasRunning(wasRunning);
+
+            string originalIpset = IpsetManager.GetState(payloadRoot);
+            report.SetIpset(originalIpset, originalIpset);
             bool serviceStopped = false;
+            bool ipsetSwitched = false;
+            bool ipsetFinalized = false;
+            string payloadFile = null;
+
             try
             {
                 if (wasRunning)
@@ -351,45 +653,100 @@ namespace ZapretControl
                     serviceStopped = true;
                     ServiceManager.StopServiceOnly(AppInfo.ServiceName);
                 }
-                if (!WaitForWinwsExit(5000))
+                bool checkFailed;
+                if (!WaitForWinwsExit(5000, out checkFailed))
                 {
-                    report.SetError(
-                        "winws.exe уже запущен вне службы. Остановите его и повторите.");
+                    report.SetError(checkFailed
+                        ? "Не удалось проверить winws.exe. Подбор не начат."
+                        : "winws.exe уже запущен вне службы. Остановите его и повторите.");
                     return report;
                 }
+
+                if (originalIpset != IpsetManager.StateAny)
+                {
+                    Log(log, "Переключаю IPSet в «любой» на время проверки…");
+                    try
+                    {
+                        ipsetSwitched = IpsetSwitch.Begin(
+                            payloadRoot, wasRunning, out originalIpset);
+                    }
+                    catch (Exception ex)
+                    {
+                        string restoreError = IpsetSwitch.Restore(
+                            payloadRoot, originalIpset);
+                        ipsetFinalized = true;
+                        report.SetIpsetRestored(restoreError == null);
+                        report.SetError("Не удалось переключить IPSet: " +
+                            ex.Message +
+                            (restoreError == null ? string.Empty : " " + restoreError));
+                        return report;
+                    }
+                    if (ipsetSwitched)
+                    {
+                        report.SetIpset(
+                            originalIpset, IpsetManager.StateAny);
+                        report.SetIpsetSwitched(true);
+                    }
+                }
+
+                if (curl != null)
+                {
+                    try
+                    {
+                        payloadFile = FreezeProbe.CreatePayloadFile();
+                    }
+                    catch (Exception ex)
+                    {
+                        // Keep curl available: the real reason belongs to the
+                        // FreezeProbe detail, not to a false "curl missing".
+                        Log(log, "Не удалось создать файл для DPI-проверки: " +
+                                 ex.Message);
+                        payloadFile = null;
+                    }
+                }
+
+                UnifiedCheckOptions checkOptions = new UnifiedCheckOptions();
+                checkOptions.RequestTimeoutMs = value.RequestTimeoutMs;
+                checkOptions.FreezeTimeoutSeconds = 5;
+                checkOptions.GateLimit = value.GateLimit < 1
+                    ? 1
+                    : (value.GateLimit > 16 ? 16 : value.GateLimit);
 
                 Log(log, "Проверяю " + candidates.Count + " стратегий…");
                 for (int i = 0; i < candidates.Count; i++)
                 {
-                    if (i > 0 && !WaitForWinwsExit(5000))
-                    {
-                        report.SetError(
-                            "winws.exe не остановился после предыдущей проверки. " +
-                            "Подбор прерван.");
-                        Log(log, report.Error);
-                        break;
-                    }
                     StrategyInfo info = candidates[i];
                     Log(log, "Проверяю " + info.Name + " (" + (i + 1) +
                              " из " + candidates.Count + ")…");
+                    bool stopped;
                     StrategyProbeResult result = Probe(
-                        payloadRoot, info, game, iface, value.RequestTimeoutMs);
+                        payloadRoot, info, game, iface, suite, suiteOffline,
+                        curl, payloadFile, checkOptions, log, out stopped);
+                    result.Order = i;
                     report.Results.Add(result);
                     Log(log, result.Display);
                     if (!result.Ok)
                     {
                         Log(log, "  " + result.Detail);
                     }
-                }
-
-                SortResults(report.Results);
-                foreach (StrategyProbeResult result in report.Results)
-                {
-                    if (result.Ok && !report.HasRecommendation)
+                    if (!stopped)
                     {
-                        report.SetRecommended(result);
+                        report.SetError(
+                            "winws.exe не остановился после проверки. Подбор прерван.");
+                        Log(log, report.Error);
+                        break;
                     }
                 }
+
+                for (int i = 0; i < report.Results.Count; i++)
+                {
+                    if (report.Results[i].Ok)
+                    {
+                        report.SetRecommended(report.Results[i]);
+                        break;
+                    }
+                }
+                SortResults(report.Results);
                 if (!report.HasRecommendation)
                 {
                     foreach (StrategyProbeResult result in report.Results)
@@ -415,7 +772,10 @@ namespace ZapretControl
                 }
                 else
                 {
-                    report.SetError("Ни одна стратегия не прошла проверку.");
+                    if (string.IsNullOrEmpty(report.Error))
+                    {
+                        report.SetError("Ни одна стратегия не прошла проверку.");
+                    }
                     Log(log, report.Error);
                 }
             }
@@ -426,19 +786,73 @@ namespace ZapretControl
             }
             finally
             {
-                if (wasRunning && serviceStopped && value.RestoreService)
+                bool ipsetOk = true;
+                if (ipsetSwitched)
                 {
-                    try
+                    // Keep the flag until the service is restored as well.
+                    string restoreError = IpsetSwitch.Restore(
+                        payloadRoot, originalIpset, true);
+                    ipsetOk = restoreError == null;
+                    report.SetIpsetRestored(ipsetOk);
+                    ipsetFinalized = true;
+                    if (restoreError != null)
                     {
-                        ZapretService.Start();
-                        report.SetServiceRestored(
-                            ZapretService.GetStatus().State == ZapretState.Running);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log(log, "Не удалось вернуть службу: " + ex.Message);
+                        report.AppendError(restoreError);
+                        Log(log, restoreError);
                     }
                 }
+                if (!ipsetFinalized)
+                {
+                    report.SetIpsetRestored(true);
+                }
+                FreezeProbe.TryDelete(payloadFile);
+
+                bool serviceOk;
+                if (wasRunning && serviceStopped && value.RestoreService)
+                {
+                    if (!ipsetOk)
+                    {
+                        serviceOk = false;
+                        report.SetServiceRestored(false);
+                        report.AppendError(
+                            "Служба не запущена: IPSet не восстановлен.");
+                    }
+                    else
+                    {
+                        serviceOk = false;
+                        try
+                        {
+                            ZapretService.Start();
+                            serviceOk = ZapretService.GetStatus().State ==
+                                        ZapretState.Running;
+                            report.SetServiceRestored(serviceOk);
+                            if (!serviceOk)
+                            {
+                                report.AppendError(
+                                    "Служба не вернулась после проверки.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            serviceOk = false;
+                            report.SetServiceRestored(false);
+                            report.AppendError(
+                                "Служба не вернулась после проверки: " + ex.Message);
+                            Log(log, "Не удалось вернуть службу: " + ex.Message);
+                        }
+                    }
+                }
+                else
+                {
+                    serviceOk = !wasRunning || !serviceStopped;
+                    report.SetServiceRestored(serviceOk);
+                }
+                if (ipsetSwitched && ipsetOk && serviceOk)
+                {
+                    IpsetSwitch.ClearFlag();
+                }
+                watch.Stop();
+                report.SetElapsedMs(watch.ElapsedMilliseconds);
                 // The stamp means "when the check finished", not when it began.
                 report.SetCheckedAtUtc(DateTime.UtcNow);
             }
@@ -541,13 +955,66 @@ namespace ZapretControl
             return iface;
         }
 
+        // Drained while winws runs: an unread anonymous pipe (about 4 KB) can
+        // block the tested process and make a working strategy look dead.
+        private sealed class ErrorCollector
+        {
+            private readonly StringBuilder _text = new StringBuilder();
+            private readonly object _sync = new object();
+
+            internal void Attach(Process process)
+            {
+                try
+                {
+                    process.ErrorDataReceived += OnData;
+                    process.BeginErrorReadLine();
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            internal string Text
+            {
+                get
+                {
+                    lock (_sync)
+                    {
+                        return Short(_text.ToString().Trim());
+                    }
+                }
+            }
+
+            private void OnData(object sender, DataReceivedEventArgs e)
+            {
+                if (e.Data == null)
+                {
+                    return;
+                }
+                lock (_sync)
+                {
+                    if (_text.Length < 8192)
+                    {
+                        _text.AppendLine(e.Data);
+                    }
+                }
+            }
+        }
+
         private static StrategyProbeResult Probe(
             string payloadRoot,
             StrategyInfo info,
             GameFilterSettings game,
             int iface,
-            int timeoutMs)
+            List<FreezeTarget> suite,
+            bool suiteOffline,
+            string curlPath,
+            string payloadFile,
+            UnifiedCheckOptions options,
+            Action<string> log,
+            out bool stopped)
         {
+            stopped = true;
             StrategyCommand command;
             try
             {
@@ -561,12 +1028,14 @@ namespace ZapretControl
 
             Process process = null;
             StrategyProbeResult probeResult = null;
+            ErrorCollector errors = new ErrorCollector();
             try
             {
                 ProcessStartInfo start = new ProcessStartInfo();
                 start.FileName = command.WinwsPath;
                 start.Arguments = command.Arguments;
-                start.WorkingDirectory = System.IO.Path.GetDirectoryName(command.WinwsPath);
+                start.WorkingDirectory = System.IO.Path.GetDirectoryName(
+                    command.WinwsPath);
                 start.UseShellExecute = false;
                 start.CreateNoWindow = true;
                 start.RedirectStandardError = true;
@@ -576,70 +1045,51 @@ namespace ZapretControl
                 {
                     probeResult = Failed(info, 0, "winws.exe не запустился");
                 }
-                else if (process.WaitForExit(1500))
-                {
-                    string output = ReadError(process);
-                    probeResult = Failed(
-                        info, 0, "winws.exe завершился (код " + process.ExitCode + ")" +
-                        (string.IsNullOrEmpty(output) ? string.Empty : ": " + output));
-                }
                 else
                 {
-                    ConnectionTestResult discord = ConnectionTests.ProbeUrl(
-                        "https://discord.com/", timeoutMs);
-                    YouTubeProbeResult video = YouTubeProbe.Run(timeoutMs, 3);
-                    ConnectionTestResult google = ConnectionTests.ProbeUrl(
-                        "https://www.google.com/", timeoutMs);
-                    watch.Stop();
-
-                    if (process.HasExited)
+                    errors.Attach(process);
+                    string readyDetail;
+                    if (!WaitReady(process, errors, out readyDetail))
                     {
-                        string output = ReadError(process);
                         probeResult = Failed(
-                            info, watch.ElapsedMilliseconds,
-                            "winws.exe завершился во время проверки (код " +
-                            process.ExitCode + ")" +
-                            (string.IsNullOrEmpty(output) ? string.Empty : ": " + output));
+                            info, watch.ElapsedMilliseconds, readyDetail);
                     }
                     else
                     {
-                        List<string> failures = new List<string>();
-                        if (!discord.Success)
+                        Thread.Sleep(500);
+                        if (process.HasExited)
                         {
-                            failures.Add("Discord: " + Short(discord.Detail));
+                            string earlyOutput = errors.Text;
+                            probeResult = Failed(
+                                info, watch.ElapsedMilliseconds,
+                                "winws.exe завершился до проверки (код " +
+                                process.ExitCode + ")" +
+                                (string.IsNullOrEmpty(earlyOutput)
+                                    ? string.Empty
+                                    : ": " + earlyOutput));
                         }
-                        if (!video.PageOk)
+                        else
                         {
-                            failures.Add("YouTube страница: " + Short(video.PageDetail));
+                            StrategyProbeResult checkedResult = UnifiedCheck.Run(
+                                info.Name, info.Path, suite, suiteOffline,
+                                curlPath, payloadFile, options, log);
+                            if (process.HasExited)
+                            {
+                                string output = errors.Text;
+                                probeResult = Failed(
+                                    info, watch.ElapsedMilliseconds,
+                                    "winws.exe завершился во время проверки (код " +
+                                    process.ExitCode + ")" +
+                                    (string.IsNullOrEmpty(output)
+                                        ? string.Empty
+                                        : ": " + output));
+                            }
+                            else
+                            {
+                                checkedResult.ElapsedMs = watch.ElapsedMilliseconds;
+                                probeResult = checkedResult;
+                            }
                         }
-                        else if (!video.PlayerOk)
-                        {
-                            failures.Add("YouTube плеер: " + Short(video.PlayerDetail));
-                        }
-                        else if (!video.CdnOk)
-                        {
-                            failures.Add("YouTube видео: " + Short(video.CdnDetail));
-                        }
-                        if (!google.Success)
-                        {
-                            failures.Add("Google: " + Short(google.Detail));
-                        }
-                        string detail = failures.Count == 0
-                            ? "все проверки пройдены, видео " + video.Successes +
-                              " из " + video.Attempts
-                            : "не прошло: " + Join(failures);
-                        probeResult = new StrategyProbeResult(
-                            info.Name,
-                            info.Path,
-                            discord.Success,
-                            video.PageOk,
-                            video.PlayerOk,
-                            video.CdnOk,
-                            video.Successes,
-                            video.Attempts,
-                            google.Success,
-                            watch.ElapsedMilliseconds,
-                            detail);
                     }
                 }
             }
@@ -649,51 +1099,56 @@ namespace ZapretControl
             }
             finally
             {
-                if (!StopProcess(process) && probeResult != null)
-                {
-                    probeResult = Failed(info, probeResult.ElapsedMs,
-                        "winws.exe не остановился");
-                }
+                stopped = StopProcess(process, 2000);
             }
-            return probeResult;
+            if (!stopped)
+            {
+                return Failed(
+                    info,
+                    probeResult == null ? 0 : probeResult.ElapsedMs,
+                    "winws.exe не остановился");
+            }
+            return probeResult ?? Failed(info, 0, "проверка не выполнена");
+        }
+
+        private static bool WaitReady(
+            Process process, ErrorCollector errors, out string detail)
+        {
+            detail = string.Empty;
+            // Poll every 200 ms until the process has stayed alive for 500 ms
+            // (3 s is the safety cap). The caller then adds its 500 ms pause.
+            Stopwatch watch = Stopwatch.StartNew();
+            while (watch.ElapsedMilliseconds < 3000)
+            {
+                if (process.HasExited)
+                {
+                    string output = errors.Text;
+                    detail = "winws.exe завершился (код " + process.ExitCode + ")" +
+                             (string.IsNullOrEmpty(output)
+                                 ? string.Empty
+                                 : ": " + output);
+                    return false;
+                }
+                if (watch.ElapsedMilliseconds >= 500)
+                {
+                    return true;
+                }
+                Thread.Sleep(200);
+            }
+            return !process.HasExited;
         }
 
         private static StrategyProbeResult Failed(
             StrategyInfo info, long elapsedMs, string detail)
         {
-            return new StrategyProbeResult(
-                info.Name, info.Path, false, false, false, false, 0, 0, false,
-                elapsedMs, detail);
+            StrategyProbeResult result = new StrategyProbeResult(
+                info.Name, info.Path);
+            result.ElapsedMs = elapsedMs;
+            result.Detail = detail ?? string.Empty;
+            return result;
         }
 
-        private static string Join(List<string> values)
-        {
-            StringBuilder builder = new StringBuilder();
-            foreach (string value in values)
-            {
-                if (builder.Length > 0)
-                {
-                    builder.Append("; ");
-                }
-                builder.Append(value);
-            }
-            return builder.ToString();
-        }
-
-        private static string ReadError(Process process)
-        {
-            try
-            {
-                string text = process.StandardError.ReadToEnd();
-                return Short(text == null ? string.Empty : text.Trim());
-            }
-            catch (Exception)
-            {
-                return string.Empty;
-            }
-        }
-
-        private static bool StopProcess(Process process)
+        private static bool StopProcess(Process process, int timeoutMs)
         {
             if (process == null)
             {
@@ -703,14 +1158,29 @@ namespace ZapretControl
             {
                 if (!process.HasExited)
                 {
-                    process.Kill();
-                    process.WaitForExit(5000);
+                    try
+                    {
+                        process.Kill();
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // The process exited between HasExited and Kill.
+                        return true;
+                    }
+                    process.WaitForExit(timeoutMs);
                 }
                 return process.HasExited;
             }
             catch (Exception)
             {
-                return false;
+                try
+                {
+                    return process.HasExited;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
             }
             finally
             {
@@ -724,25 +1194,38 @@ namespace ZapretControl
             }
         }
 
-        private static bool WaitForWinwsExit(int timeoutMs)
+        private static bool WaitForWinwsExit(int timeoutMs, out bool checkFailed)
         {
+            checkFailed = false;
             DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
             while (DateTime.UtcNow < deadline)
             {
-                if (!HasWinws())
+                bool failed;
+                if (!HasWinws(out failed))
                 {
-                    return true;
+                    checkFailed = failed;
+                    return !failed;
+                }
+                if (failed)
+                {
+                    checkFailed = true;
+                    return false;
                 }
                 Thread.Sleep(250);
             }
-            return !HasWinws();
+            bool finalFailed;
+            bool found = HasWinws(out finalFailed);
+            checkFailed = finalFailed;
+            return !found && !finalFailed;
         }
 
-        private static bool HasWinws()
+        private static bool HasWinws(out bool checkFailed)
         {
+            checkFailed = false;
             try
             {
-                Process[] processes = Process.GetProcessesByName(ZapretService.ProcessName);
+                Process[] processes = Process.GetProcessesByName(
+                    ZapretService.ProcessName);
                 bool found = processes.Length > 0;
                 foreach (Process process in processes)
                 {
@@ -752,7 +1235,10 @@ namespace ZapretControl
             }
             catch (Exception)
             {
-                return false;
+                // Fail closed: an unreadable process list must not start a
+                // second winws next to a possibly running one.
+                checkFailed = true;
+                return true;
             }
         }
 
@@ -762,7 +1248,8 @@ namespace ZapretControl
             {
                 return "нет подробностей";
             }
-            return text.Length > 200 ? text.Substring(0, 200) : text;
+            string value = text.Replace("\r", " ").Replace("\n", " ").Trim();
+            return value.Length > 200 ? value.Substring(0, 200) : value;
         }
 
         private static void Log(Action<string> log, string message)

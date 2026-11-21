@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.ServiceProcess;
+using System.Text;
 
 namespace ZapretControl
 {
@@ -17,8 +19,8 @@ namespace ZapretControl
             "--set-game-filter=<mode>|--ipset-status|--set-ipset=<state>|" +
             "--update-ipset|--fakes|--replace-fake=<kind> --file=<name>|" +
             "--hosts-check|--hosts-apply|--clear-discord-cache|--diagnostics|" +
-            "--test=<standard|dpi>|--youtube-probe|--update-check|--update-payload|--update-app|" +
-            "--rollback-payload";
+            "--test[=<standard|dpi>] [--gate=1..16]|--youtube-probe|--update-check|" +
+            "--update-payload|--update-app|--rollback-payload";
 
         private static int Main(string[] args)
         {
@@ -32,6 +34,10 @@ namespace ZapretControl
             string command = commandRaw.ToLowerInvariant();
             try
             {
+                if (AdminCheck.IsAdministrator())
+                {
+                    IpsetSwitch.RecoverStaleSafe();
+                }
                 if (command == "--status")
                 {
                     return PrintStatus();
@@ -142,9 +148,19 @@ namespace ZapretControl
                 {
                     return PrintDiagnostics();
                 }
+                if (command == "--test")
+                {
+                    int gate;
+                    if (!TryParseGate(args, out gate))
+                    {
+                        Console.Error.WriteLine("error=invalid_gate");
+                        return 64;
+                    }
+                    return RunAdvisor(gate);
+                }
                 if (command.StartsWith("--test=", StringComparison.Ordinal))
                 {
-                    return RunTests(
+                    return RunLegacyTests(
                         commandRaw.Substring("--test=".Length).ToLowerInvariant());
                 }
                 if (command == "--youtube-probe")
@@ -789,21 +805,128 @@ namespace ZapretControl
             return report.Count(DiagnosticState.Fail) > 0 ? 1 : 0;
         }
 
-        private static int RunTests(string mode)
+        private static bool TryParseGate(string[] args, out int gate)
         {
-            ConnectionTestReport report = ConnectionTests.Run(mode);
+            gate = 16;
+            if (args == null)
+            {
+                return true;
+            }
+            for (int i = 1; i < args.Length; i++)
+            {
+                string arg = args[i];
+                if (!arg.StartsWith("--gate=", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                int parsed;
+                if (!int.TryParse(
+                        arg.Substring("--gate=".Length),
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out parsed) ||
+                    parsed < 1 || parsed > 16)
+                {
+                    return false;
+                }
+                gate = parsed;
+            }
+            return true;
+        }
+
+        // Full advisor run: stops the service, tests the whole .bat pool and
+        // restores the service and IPSet in finally. Requires admin.
+        private static int RunAdvisor(int gateLimit)
+        {
+            if (!RequireAdmin())
+            {
+                return 3;
+            }
+            Console.WriteLine("gate=" + gateLimit);
+            StrategyAdviceOptions options = new StrategyAdviceOptions();
+            options.GateLimit = gateLimit;
+            StrategyAdviceReport report = StrategyAdvisor.Recommend(
+                AppPaths.ResolvePayloadRoot(),
+                options,
+                delegate(string message)
+                {
+                    Console.WriteLine("progress=" + message);
+                });
+            foreach (StrategyProbeResult result in report.Results)
+            {
+                Console.WriteLine(
+                    "strategy=" + result.Name +
+                    " status=" + (result.Ok ? "full" :
+                        (result.PartiallyOk ? "partial" : "fail")) +
+                    " passed=" + result.Passed + "/" + result.Total +
+                    " discord=" + result.DiscordPassed + "/" + result.DiscordTotal +
+                    " youtube_hosts=" + result.YouTubeHostsPassed +
+                    "/" + result.YouTubeHostsTotal +
+                    " page=" + OkFail(result.YouTubePageOk) +
+                    " player=" + OkFail(result.YouTubePlayerOk) +
+                    " video=" + result.VideoSuccesses + "/" + result.VideoAttempts +
+                    " google=" + result.GooglePassed + "/" + result.GoogleTotal +
+                    " freeze=" + result.FreezeDisplay +
+                    " tls12=" + result.Tls12Display +
+                    " tls13=" + result.Tls13Display +
+                    " elapsed_ms=" + result.ElapsedMs);
+            }
+            Console.WriteLine("recommended=" + report.RecommendedName);
+            Console.WriteLine("recommendation_full=" +
+                (report.HasRecommendation ? "true" : "false"));
+            Console.WriteLine("best_partial=" + report.BestName);
+            Console.WriteLine("ipset_mode=" + report.IpsetMode);
+            Console.WriteLine("ipset_original=" + report.IpsetOriginal);
+            Console.WriteLine("ipset_restored=" +
+                (report.IpsetRestored ? "true" : "false"));
+            Console.WriteLine("curl_available=" +
+                (report.CurlAvailable ? "true" : "false"));
+            Console.WriteLine("suite_offline=" +
+                (report.FreezeSuiteOffline ? "true" : "false"));
+            Console.WriteLine("elapsed_ms=" + report.ElapsedMs);
+            if (!string.IsNullOrEmpty(report.Error))
+            {
+                Console.Error.WriteLine("error=" + report.Error);
+            }
+            bool saved = report.Results.Count > 0 &&
+                         StrategyReportStore.Save(report);
+            Console.WriteLine("report_saved=" + (saved ? "true" : "false"));
+            return report.HasRecommendation ? 0 : 1;
+        }
+
+        // The old names stay as aliases. They no longer run a separate DPI or
+        // standard mode: both map to the unified check on the current strategy.
+        private static int RunLegacyTests(string mode)
+        {
+            if (mode != "standard" && mode != "dpi")
+            {
+                Console.Error.WriteLine("error=unknown_test_mode");
+                return 64;
+            }
+            Console.WriteLine("note=legacy --test=" + mode +
+                " mapped to the unified single-strategy check");
+            ConnectionTestReport report = ConnectionTests.RunSingle();
             foreach (ConnectionTestResult result in report.Results)
             {
                 Console.WriteLine("test=" + (result.Success ? "OK" : "FAIL") +
-                    " " + result.Name + " " + result.ElapsedMs + "ms " + result.Detail);
+                    " " + result.Name + " " + result.Detail);
+            }
+            if (!string.IsNullOrEmpty(report.Notes))
+            {
+                Console.WriteLine("note_detail=" + report.Notes);
             }
             Console.WriteLine("passed=" + report.Passed + "/" + report.Results.Count);
             return report.Passed == report.Results.Count ? 0 : 1;
         }
 
+        private static string OkFail(bool value)
+        {
+            return value ? "OK" : "FAIL";
+        }
+
         private static int ProbeYouTube()
         {
-            YouTubeProbeResult result = YouTubeProbe.Run(15000, 3);
+            YouTubeProbeResult result = YouTubeProbe.Run(4000, 3);
             Console.WriteLine("page=" + (result.PageOk ? "OK" : "FAIL"));
             Console.WriteLine("page_detail=" + result.PageDetail);
             Console.WriteLine("player=" + (result.PlayerOk ? "OK" : "FAIL"));
@@ -813,6 +936,16 @@ namespace ZapretControl
             Console.WriteLine("attempts=" + result.Attempts);
             Console.WriteLine("successes=" + result.Successes);
             Console.WriteLine("bytes=" + result.Bytes);
+            Console.WriteLine("tls12=" + (result.Tls12Attempted
+                ? OkFail(result.Tls12Ok)
+                : "n/a"));
+            Console.WriteLine("tls13=" + (result.Tls13Attempted
+                ? OkFail(result.Tls13Ok)
+                : "n/a"));
+            foreach (YouTubeVideoResult video in result.Videos)
+            {
+                Console.WriteLine("video_result=" + video.Display);
+            }
             Console.WriteLine("elapsed_ms=" + result.ElapsedMs);
             return result.CdnOk ? 0 : 1;
         }
@@ -1217,13 +1350,87 @@ namespace ZapretControl
                 Console.Error.WriteLine("selftest failed: YouTube player response parsing");
                 return 1;
             }
+            if (!FreezeProbe.IsLikelyBlocked(28, 65536, 0, 5.02, 5) ||
+                FreezeProbe.IsLikelyBlocked(0, 65536, 0, 5.02, 5) ||
+                FreezeProbe.IsLikelyBlocked(28, 65536, 1024, 5.02, 5) ||
+                FreezeProbe.IsLikelyBlocked(28, 65536, 0, 4.1, 5))
+            {
+                Console.Error.WriteLine("selftest failed: DPI freeze detection");
+                return 1;
+            }
+            if (!YouTubeProbe.CombineVideos(new int[] { 3, 1 }, 3) ||
+                YouTubeProbe.CombineVideos(new int[] { 1, 0 }, 3) ||
+                !YouTubeProbe.IsVideoOk(2, 3) ||
+                YouTubeProbe.IsVideoOk(1, 3))
+            {
+                Console.Error.WriteLine("selftest failed: YouTube video verdict");
+                return 1;
+            }
+            StandardProbeReport compat = new StandardProbeReport();
+            for (int i = 0; i < 4; i++)
+            {
+                string host = "host" + i + ".example";
+                compat.Results.Add(new HostProbeResult(
+                    host, "Discord", "HTTP/1.1", true, "ok", 1));
+                compat.Results.Add(new HostProbeResult(
+                    host, "Discord", "TLS1.2", true, "ok", 1));
+                compat.Results.Add(new HostProbeResult(
+                    host, "Discord", "TLS1.3", false, "unsupported", 1));
+            }
+            compat.Tls13Unsupported = true;
+            if (!compat.GroupOk("Discord") || compat.Passed("Discord") != 12)
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: TLS 1.3 unsupported compatibility");
+                return 1;
+            }
+            compat.Tls13Unsupported = false;
+            if (compat.GroupOk("Discord"))
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: TLS 1.3 failure accepted without reason");
+                return 1;
+            }
+
             List<StrategyProbeResult> ranked = new List<StrategyProbeResult>();
-            ranked.Add(new StrategyProbeResult(
-                "pages", "C:\\z\\p.bat", true, true, true, false, 0, 3, true, 100, ""));
-            ranked.Add(new StrategyProbeResult(
-                "video", "C:\\z\\v.bat", true, true, true, true, 2, 3, false, 100, ""));
-            ranked.Add(new StrategyProbeResult(
-                "full", "C:\\z\\f.bat", true, true, true, true, 3, 3, true, 100, ""));
+            StrategyProbeResult pages = new StrategyProbeResult(
+                "pages", "C:\\z\\p.bat");
+            pages.DiscordOk = true;
+            pages.YouTubeHostsOk = true;
+            pages.YouTubePageOk = true;
+            pages.YouTubePlayerOk = true;
+            pages.GoogleOk = true;
+            pages.VideoSuccesses = 0;
+            pages.VideoAttempts = 3;
+            pages.SetCounts(12, 12, 12, 12, 6, 6, 6, 6);
+            pages.SetFreeze(true, true, true, 0, 36, 108, 0, "ok");
+            StrategyProbeResult video = new StrategyProbeResult(
+                "video", "C:\\z\\v.bat");
+            video.DiscordOk = true;
+            video.YouTubeHostsOk = true;
+            video.YouTubePageOk = true;
+            video.YouTubePlayerOk = true;
+            video.YouTubeVideoOk = true;
+            video.GoogleOk = false;
+            video.VideoSuccesses = 2;
+            video.VideoAttempts = 3;
+            video.SetCounts(12, 12, 12, 12, 5, 6, 6, 6);
+            video.SetFreeze(true, true, true, 0, 36, 108, 0, "ok");
+            StrategyProbeResult full = new StrategyProbeResult(
+                "full", "C:\\z\\f.bat");
+            full.DiscordOk = true;
+            full.YouTubeHostsOk = true;
+            full.YouTubePageOk = true;
+            full.YouTubePlayerOk = true;
+            full.YouTubeVideoOk = true;
+            full.GoogleOk = true;
+            full.VideoSuccesses = 3;
+            full.VideoAttempts = 3;
+            full.SetCounts(12, 12, 12, 12, 6, 6, 6, 6);
+            full.SetFreeze(true, true, true, 0, 36, 108, 0, "ok");
+            ranked.Add(pages);
+            ranked.Add(video);
+            ranked.Add(full);
             StrategyAdvisor.SortResults(ranked);
             if (ranked[0].Name != "full" ||
                 ranked[1].Name != "video" ||
@@ -1240,9 +1447,23 @@ namespace ZapretControl
             {
                 StrategyAdviceReport savedReport = new StrategyAdviceReport();
                 StrategyProbeResult savedResult = new StrategyProbeResult(
-                    "general", "C:\\z\\g.bat", true, true, true, true, 3, 3, true, 120, "");
+                    "general", "C:\\z\\g.bat");
+                savedResult.DiscordOk = true;
+                savedResult.YouTubeHostsOk = true;
+                savedResult.YouTubePageOk = true;
+                savedResult.YouTubePlayerOk = true;
+                savedResult.YouTubeVideoOk = true;
+                savedResult.GoogleOk = true;
+                savedResult.VideoSuccesses = 3;
+                savedResult.VideoAttempts = 6;
+                savedResult.SetCounts(12, 12, 12, 12, 6, 6, 6, 6);
+                savedResult.SetFreeze(true, true, true, 0, 36, 108, 0, "ok");
                 savedReport.Results.Add(savedResult);
                 savedReport.SetRecommended(savedResult);
+                savedReport.SetIpset("loaded", "any");
+                savedReport.SetIpsetSwitched(true);
+                savedReport.SetIpsetRestored(true);
+                savedReport.SetCurlAvailable(true);
                 savedReport.SetCheckedAtUtc(
                     new DateTime(2026, 11, 15, 12, 30, 0, DateTimeKind.Utc));
                 if (!StrategyReportStore.SaveToPath(savedReport, reportPath))
@@ -1256,6 +1477,9 @@ namespace ZapretControl
                     loadedReport.Results.Count != 1 ||
                     loadedReport.RecommendedName != "general" ||
                     !loadedReport.Results[0].Ok ||
+                    loadedReport.IpsetMode != "any" ||
+                    !loadedReport.IpsetRestored ||
+                    !loadedReport.CurlAvailable ||
                     loadedReport.CheckedAtUtc.Kind != DateTimeKind.Utc ||
                     loadedReport.CheckedAtUtc !=
                         new DateTime(2026, 11, 15, 12, 30, 0, DateTimeKind.Utc))
@@ -1283,6 +1507,88 @@ namespace ZapretControl
                     if (File.Exists(reportPath))
                     {
                         File.Delete(reportPath);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+            string ipsetRoot = Path.Combine(
+                Path.GetTempPath(),
+                "ZapretControl-selftest-ipset-" + Guid.NewGuid().ToString("N"));
+            string ipsetFlag = Path.Combine(
+                Path.GetTempPath(),
+                "ZapretControl-selftest-ipset-" + Guid.NewGuid().ToString("N") + ".flag");
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(ipsetRoot, "lists"));
+                Directory.CreateDirectory(Path.Combine(ipsetRoot, "bin"));
+                File.WriteAllText(
+                    Path.Combine(ipsetRoot, @"bin\winws.exe"),
+                    string.Empty,
+                    new UTF8Encoding(false));
+                File.WriteAllText(
+                    IpsetManager.GetListPath(ipsetRoot),
+                    "1.1.1.1/32" + Environment.NewLine,
+                    new UTF8Encoding(false));
+                string originalIpset;
+                if (!IpsetSwitch.Begin(ipsetRoot, ipsetFlag, out originalIpset) ||
+                    originalIpset != IpsetManager.StateLoaded ||
+                    IpsetManager.GetState(ipsetRoot) != IpsetManager.StateAny ||
+                    !File.Exists(ipsetFlag))
+                {
+                    Console.Error.WriteLine("selftest failed: ipset switch to any");
+                    return 1;
+                }
+                string restoreError = null;
+                try
+                {
+                    throw new InvalidOperationException("simulated advisor failure");
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                finally
+                {
+                    restoreError = IpsetSwitch.Restore(
+                        ipsetRoot, originalIpset, ipsetFlag);
+                }
+                if (restoreError != null)
+                {
+                    Console.Error.WriteLine(
+                        "selftest failed: ipset restore: " + restoreError);
+                    return 1;
+                }
+                if (IpsetManager.GetState(ipsetRoot) != IpsetManager.StateLoaded ||
+                    File.Exists(ipsetFlag))
+                {
+                    Console.Error.WriteLine("selftest failed: ipset state after exception");
+                    return 1;
+                }
+                if (!IpsetSwitch.Begin(ipsetRoot, ipsetFlag, out originalIpset))
+                {
+                    Console.Error.WriteLine("selftest failed: ipset second switch");
+                    return 1;
+                }
+                if (IpsetSwitch.RecoverStale(ipsetFlag, ipsetRoot) != null ||
+                    IpsetManager.GetState(ipsetRoot) != IpsetManager.StateLoaded ||
+                    File.Exists(ipsetFlag))
+                {
+                    Console.Error.WriteLine("selftest failed: ipset stale recovery");
+                    return 1;
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(ipsetFlag))
+                    {
+                        File.Delete(ipsetFlag);
+                    }
+                    if (Directory.Exists(ipsetRoot))
+                    {
+                        Directory.Delete(ipsetRoot, true);
                     }
                 }
                 catch (Exception)

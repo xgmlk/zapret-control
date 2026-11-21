@@ -17,6 +17,15 @@ namespace ZapretControl
         public string Error { get; set; }
         public bool ServiceWasRunning { get; set; }
         public bool ServiceRestored { get; set; }
+        // "ipset_mode" and "curl_available" are part of the on-disk contract
+        // requested by the specification; keep the exact keys.
+        public string ipset_mode { get; set; }
+        public string ipset_original { get; set; }
+        public bool IpsetSwitched { get; set; }
+        public bool IpsetRestored { get; set; }
+        public bool curl_available { get; set; }
+        public bool FreezeSuiteOffline { get; set; }
+        public long ElapsedMs { get; set; }
         public List<StrategyProbeFile> Results { get; set; }
 
         public StrategyReportFile()
@@ -25,6 +34,8 @@ namespace ZapretControl
             RecommendedName = string.Empty;
             BestName = string.Empty;
             Error = string.Empty;
+            ipset_mode = string.Empty;
+            ipset_original = string.Empty;
             Results = new List<StrategyProbeFile>();
         }
     }
@@ -33,13 +44,39 @@ namespace ZapretControl
     {
         public string Name { get; set; }
         public string Path { get; set; }
+        public int Order { get; set; }
         public bool DiscordOk { get; set; }
+        public int DiscordPassed { get; set; }
+        public int DiscordTotal { get; set; }
+        public bool YouTubeHostsOk { get; set; }
+        public int YouTubeHostsPassed { get; set; }
+        public int YouTubeHostsTotal { get; set; }
         public bool YouTubePageOk { get; set; }
         public bool YouTubePlayerOk { get; set; }
         public bool YouTubeVideoOk { get; set; }
         public bool GoogleOk { get; set; }
+        public int GooglePassed { get; set; }
+        public int GoogleTotal { get; set; }
+        public bool CloudflareOk { get; set; }
+        public int CloudflarePassed { get; set; }
+        public int CloudflareTotal { get; set; }
+        public bool FreezeAvailable { get; set; }
+        public bool FreezeChecked { get; set; }
+        public bool FreezeOk { get; set; }
+        public int FreezeBlocked { get; set; }
+        public int FreezeTargets { get; set; }
+        public int FreezeOkCount { get; set; }
+        public int FreezeErrors { get; set; }
+        public string FreezeDetail { get; set; }
+        public bool Tls12Attempted { get; set; }
+        public bool Tls12Ok { get; set; }
+        public bool Tls13Attempted { get; set; }
+        public bool Tls13Ok { get; set; }
+        public bool Tls13EnvironmentUnsupported { get; set; }
         public int VideoAttempts { get; set; }
         public int VideoSuccesses { get; set; }
+        public string VideoDetail { get; set; }
+        public string HostsDetail { get; set; }
         public long ElapsedMs { get; set; }
         public string Detail { get; set; }
 
@@ -47,6 +84,9 @@ namespace ZapretControl
         {
             Name = string.Empty;
             Path = string.Empty;
+            FreezeDetail = string.Empty;
+            VideoDetail = string.Empty;
+            HostsDetail = string.Empty;
             Detail = string.Empty;
         }
     }
@@ -199,18 +239,47 @@ namespace ZapretControl
                     }
                     // Saved paths are display-only hints. Clearing them keeps a
                     // read-only report from ever becoming an executable input.
-                    report.Results.Add(new StrategyProbeResult(
-                        name,
-                        string.Empty,
-                        item.DiscordOk,
-                        item.YouTubePageOk,
-                        item.YouTubePlayerOk,
-                        item.YouTubeVideoOk,
-                        item.VideoSuccesses,
-                        item.VideoAttempts,
-                        item.GoogleOk,
-                        item.ElapsedMs,
-                        CleanText(item.Detail, 2000, true)));
+                    StrategyProbeResult result = new StrategyProbeResult(
+                        name, string.Empty);
+                    result.Order = item.Order;
+                    result.DiscordOk = item.DiscordOk;
+                    result.YouTubeHostsOk = item.YouTubeHostsOk;
+                    result.YouTubePageOk = item.YouTubePageOk;
+                    result.YouTubePlayerOk = item.YouTubePlayerOk;
+                    result.YouTubeVideoOk = item.YouTubeVideoOk;
+                    result.GoogleOk = item.GoogleOk;
+                    result.CloudflareOk = item.CloudflareOk;
+                    result.SetCounts(
+                        item.DiscordPassed,
+                        item.DiscordTotal,
+                        item.YouTubeHostsPassed,
+                        item.YouTubeHostsTotal,
+                        item.GooglePassed,
+                        item.GoogleTotal,
+                        item.CloudflarePassed,
+                        item.CloudflareTotal);
+                    result.SetFreeze(
+                        item.FreezeAvailable,
+                        item.FreezeChecked,
+                        item.FreezeOk,
+                        item.FreezeBlocked,
+                        item.FreezeTargets,
+                        item.FreezeOkCount,
+                        item.FreezeErrors,
+                        CleanText(item.FreezeDetail, 500, true));
+                    result.Tls12Attempted = item.Tls12Attempted;
+                    result.Tls12Ok = item.Tls12Ok;
+                    result.Tls13Attempted = item.Tls13Attempted;
+                    result.Tls13Ok = item.Tls13Ok;
+                    result.Tls13EnvironmentUnsupported =
+                        item.Tls13EnvironmentUnsupported;
+                    result.VideoSuccesses = item.VideoSuccesses;
+                    result.VideoAttempts = item.VideoAttempts;
+                    result.VideoDetail = CleanText(item.VideoDetail, 500, true);
+                    result.HostsDetail = CleanText(item.HostsDetail, 1000, true);
+                    result.ElapsedMs = item.ElapsedMs;
+                    result.Detail = CleanText(item.Detail, 2000, true);
+                    report.Results.Add(result);
                 }
                 if (report.Results.Count == 0)
                 {
@@ -235,6 +304,14 @@ namespace ZapretControl
                 }
                 report.SetServiceWasRunning(data.ServiceWasRunning);
                 report.SetServiceRestored(data.ServiceRestored);
+                report.SetIpset(
+                    CleanText(data.ipset_original, 40, false),
+                    CleanText(data.ipset_mode, 40, false));
+                report.SetIpsetSwitched(data.IpsetSwitched);
+                report.SetIpsetRestored(data.IpsetRestored);
+                report.SetCurlAvailable(data.curl_available);
+                report.SetFreezeSuiteOffline(data.FreezeSuiteOffline);
+                report.SetElapsedMs(data.ElapsedMs);
 
                 // Trust the ranked list: only a result that still exists can be
                 // recommended, otherwise fall back to the first full/partial one.
@@ -275,18 +352,52 @@ namespace ZapretControl
             data.Error = report.Error;
             data.ServiceWasRunning = report.ServiceWasRunning;
             data.ServiceRestored = report.ServiceRestored;
+            data.ipset_mode = report.IpsetMode;
+            data.ipset_original = report.IpsetOriginal;
+            data.IpsetSwitched = report.IpsetSwitched;
+            data.IpsetRestored = report.IpsetRestored;
+            data.curl_available = report.CurlAvailable;
+            data.FreezeSuiteOffline = report.FreezeSuiteOffline;
+            data.ElapsedMs = report.ElapsedMs;
             foreach (StrategyProbeResult result in report.Results)
             {
                 StrategyProbeFile item = new StrategyProbeFile();
                 item.Name = result.Name;
                 item.Path = result.Path;
+                item.Order = result.Order;
                 item.DiscordOk = result.DiscordOk;
+                item.DiscordPassed = result.DiscordPassed;
+                item.DiscordTotal = result.DiscordTotal;
+                item.YouTubeHostsOk = result.YouTubeHostsOk;
+                item.YouTubeHostsPassed = result.YouTubeHostsPassed;
+                item.YouTubeHostsTotal = result.YouTubeHostsTotal;
                 item.YouTubePageOk = result.YouTubePageOk;
                 item.YouTubePlayerOk = result.YouTubePlayerOk;
                 item.YouTubeVideoOk = result.YouTubeVideoOk;
                 item.GoogleOk = result.GoogleOk;
+                item.GooglePassed = result.GooglePassed;
+                item.GoogleTotal = result.GoogleTotal;
+                item.CloudflareOk = result.CloudflareOk;
+                item.CloudflarePassed = result.CloudflarePassed;
+                item.CloudflareTotal = result.CloudflareTotal;
+                item.FreezeAvailable = result.FreezeAvailable;
+                item.FreezeChecked = result.FreezeChecked;
+                item.FreezeOk = result.FreezeOk;
+                item.FreezeBlocked = result.FreezeBlocked;
+                item.FreezeTargets = result.FreezeTargets;
+                item.FreezeOkCount = result.FreezeOkCount;
+                item.FreezeErrors = result.FreezeErrors;
+                item.FreezeDetail = result.FreezeDetail;
+                item.Tls12Attempted = result.Tls12Attempted;
+                item.Tls12Ok = result.Tls12Ok;
+                item.Tls13Attempted = result.Tls13Attempted;
+                item.Tls13Ok = result.Tls13Ok;
+                item.Tls13EnvironmentUnsupported =
+                    result.Tls13EnvironmentUnsupported;
                 item.VideoAttempts = result.VideoAttempts;
                 item.VideoSuccesses = result.VideoSuccesses;
+                item.VideoDetail = result.VideoDetail;
+                item.HostsDetail = result.HostsDetail;
                 item.ElapsedMs = result.ElapsedMs;
                 item.Detail = result.Detail;
                 data.Results.Add(item);

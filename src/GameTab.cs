@@ -44,9 +44,7 @@ namespace ZapretControl
             _status = AddLabel(settings, "—", 20, 190, 812, 22);
             AddButton(settings, "Сохранить", 20, 228, 160, 32, OnSave);
             AddButton(settings, "Сохранить и применить", 190, 228, 220, 32, OnSaveApply);
-            AddMutedLabel(settings,
-                "Game Filter встраивается в ImagePath службы при пересоздании.",
-                420, 236, 412, 20);
+            AddButton(settings, "Как это работает", 700, 228, 132, 32, OnHelp);
 
             CardPanel info = AddCard("КАК ЭТО РАБОТАЕТ", 0, 312, 852, 208);
             _strategyInfo = AddLabel(info, "—", 20, 42, 812, 20);
@@ -62,6 +60,9 @@ namespace ZapretControl
             AddMutedLabel(info,
                 "Изменение диапазонов не требует переустановки zapret, но требует перезапуска службы.",
                 20, 154, 812, 20);
+            AddMutedLabel(info,
+                "Game Filter встраивается в ImagePath службы при пересоздании.",
+                20, 180, 812, 20);
 
             _loading = false;
             _disabled.CheckedChanged += delegate { UpdateStatus(); };
@@ -199,6 +200,11 @@ namespace ZapretControl
                 _strategyInfo.Text = "Не удалось прочитать стратегию: " + ex.Message;
                 _strategyInfo.ForeColor = RedColor;
             }
+        }
+
+        private void OnHelp(object sender, EventArgs e)
+        {
+            ShowHelp("Игры — как это работает", HelpTexts.GameFilter);
         }
 
         private void OnSave(object sender, EventArgs e)

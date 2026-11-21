@@ -64,7 +64,7 @@ namespace ZapretControl
         public string ToText()
         {
             StringBuilder builder = new StringBuilder();
-            builder.AppendLine("Zapret Control — быстрая проверка (DPI + видео + hosts), " +
+            builder.AppendLine("Zapret Control — проверка (соединения, видео, DPI, hosts), " +
                                StartedAt.ToString("yyyy-MM-dd HH:mm:ss"));
             foreach (ConnectionTestResult result in Tests.Results)
             {
@@ -86,14 +86,15 @@ namespace ZapretControl
         }
     }
 
-    // Compact check for the home tab: DPI connectivity plus the managed hosts
-    // block. Detailed output is passed to the tests tab.
+    // Home tab check: the same unified strategy check without candidate
+    // switching, plus the managed hosts block. Detailed output goes to the
+    // tests tab.
     public static class HomeCheck
     {
         public static HomeCheckReport Run()
         {
             DateTime startedAt = DateTime.Now;
-            ConnectionTestReport tests = ConnectionTests.RunHome();
+            ConnectionTestReport tests = ConnectionTests.RunSingle();
             bool hostsChecked = false;
             bool hostsOk = false;
             bool hostsUpdated = false;

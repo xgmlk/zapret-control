@@ -190,6 +190,14 @@ namespace ZapretControl
                 MessageBoxIcon.Information);
         }
 
+        protected void ShowHelp(string title, string text)
+        {
+            using (HelpForm form = new HelpForm(title, text))
+            {
+                form.ShowDialog(this);
+            }
+        }
+
         protected static bool Confirm(string text)
         {
             return MessageBox.Show(

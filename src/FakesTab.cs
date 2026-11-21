@@ -42,7 +42,8 @@ namespace ZapretControl
                 delegate { OnReplace(FakesManager.GameKind); });
             AddButton(files, "Обновить список", 540, 122, 180, 32,
                 delegate { RefreshData(); });
-            _status = AddMutedLabel(files, "—", 540, 166, 290, 80);
+            AddButton(files, "Как это работает", 540, 208, 180, 32, OnHelp);
+            _status = AddMutedLabel(files, "—", 20, 252, 812, 20);
         }
 
         public override void ActivateTab()
@@ -87,6 +88,11 @@ namespace ZapretControl
                 _status.Text = "Ошибка: " + ex.Message;
                 _status.ForeColor = RedColor;
             }
+        }
+
+        private void OnHelp(object sender, EventArgs e)
+        {
+            ShowHelp("Фейки — как это работает", HelpTexts.Fakes);
         }
 
         private async void OnReplace(string kind)

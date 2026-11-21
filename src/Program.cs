@@ -27,6 +27,31 @@ namespace ZapretControl
                 return;
             }
 
+            // A previous advisor run may have been killed while IPSet was in
+            // "any"; restore it before any service operation and bring the
+            // service back to the persisted state. A running winws keeps the
+            // empty list until restarted, so reload it.
+            bool serviceWasRunning;
+            if (IpsetSwitch.RecoverStaleSafe(out serviceWasRunning))
+            {
+                ZapretState state = ZapretService.GetStatus().State;
+                try
+                {
+                    if (serviceWasRunning && state != ZapretState.Running)
+                    {
+                        ZapretService.Start();
+                    }
+                    else if (state == ZapretState.Running)
+                    {
+                        ZapretService.Stop();
+                        ZapretService.Start();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e)
             {

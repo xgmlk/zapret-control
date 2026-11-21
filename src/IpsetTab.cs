@@ -35,6 +35,7 @@ namespace ZapretControl
             AddButton(stateCard, "Загружен", 20, 160, 140, 26, OnLoaded);
             AddButton(stateCard, "Отключён", 170, 160, 140, 26, OnNone);
             AddButton(stateCard, "Пустой (any)", 320, 160, 140, 26, OnAny);
+            AddButton(stateCard, "Как это работает", 680, 160, 152, 26, OnHelp);
 
             CardPanel updateCard = AddCard("ОБНОВЛЕНИЕ СПИСКА", 0, 202, 852, 160);
             AddMutedLabel(updateCard,
@@ -110,6 +111,11 @@ namespace ZapretControl
             {
                 return 0;
             }
+        }
+
+        private void OnHelp(object sender, EventArgs e)
+        {
+            ShowHelp("IPSet — как это работает", HelpTexts.Ipset);
         }
 
         private async void OnLoaded(object sender, EventArgs e)

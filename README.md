@@ -42,8 +42,9 @@ payload Flowseal и само приложение (`release.json`).
 - Замена активных фейков с SHA256 и бэкапом.
 - Обновление hosts управляемым блоком и очистка кэша Discord.
 - Диагностика (BFE, прокси, TCP timestamps, конфликтующие программы, hosts,
-  VPN, DoH, интерфейс, задача) и нативные TCP/TLS/DPI-тесты, включая фрагмент
-  видео YouTube.
+  VPN, DoH, интерфейс, задача) и нативная единая проверка: 12 хостов по
+  HTTP/1.1/TLS 1.2/TLS 1.3, DPI-заморозка 16–20 КБ через `curl.exe`, страница
+  и плеер YouTube, два ролика по три фрагмента `googlevideo`.
 - Два канала обновлений: Flowseal payload и `ZapretControl.Setup.exe`.
   Манифест `release.json`, SHA256, Authenticode, staging/backup/rollback,
   сохранение пользовательских списков, Game Filter и активных фейков.
@@ -67,7 +68,8 @@ payload Flowseal и само приложение (`release.json`).
    GUI сам предложит подобрать стратегию, если автоподбор не выполнялся.
 
 Требования: Windows 10/11 x64, .NET Framework 4.x, права администратора,
-доступ к GitHub. На чистой машине ничего дополнительно ставить не нужно.
+доступ к GitHub. `curl.exe` для DPI-заморозки входит в Windows 10 1803+;
+без него подбор работает, но полной рекомендации не даёт.
 
 ### Тихая установка и локальный payload
 
@@ -109,14 +111,14 @@ ZapretControl.Setup.exe --selftest
 
 | Вкладка | Что делает |
 |---|---|
-| Главная | toggle защиты, статус/PID, активный интерфейс, «Обновить», выбор и подбор стратегии, «Последняя проверка» с датой и списком, быстрая проверка (DPI + видео YouTube + hosts) с итогом |
+| Главная | toggle защиты, статус/PID, активный интерфейс, «Обновить», выбор и подбор стратегии, «Последняя проверка» с датой и списком, проверка текущей стратегии и hosts с итогом |
 | Служба | статус, стратегия, автозагрузка, остановка/запуск и перезапуск защиты, автосинхронизация, payload; пересоздание и удаление — в «Дополнительно» |
 | Игры | Game Filter: disabled/all/tcp/udp, диапазоны портов, сохранение и применение |
 | IPSet | loaded/none/any, обновление `ipset-all.txt`, резервная копия |
 | Фейки | активные Discord/GameFilter, список `.bin`, замена с бэкапом |
 | Обновления | проверка `release.json`, обновление и откат payload, обновление приложения, журнал |
 | Диагностика | проверки окружения, hosts, кэш Discord, копирование отчёта |
-| Тесты | стандартные TCP/DNS-тесты, DPI-тест HTTPS-запросов и подробности быстрой проверки с главной |
+| Тесты | единая проверка текущей стратегии (соединения, DPI-заморозка, YouTube), «Подобрать» и подробности проверки с главной |
 
 Статус обновляется каждые 3 секунды; долгие операции идут в фоне и не
 блокируют окно.
@@ -237,7 +239,9 @@ ZapretControl.Cli.exe --replace-fake=discord|game --file=<name>
 ZapretControl.Cli.exe --hosts-check | --hosts-apply
 ZapretControl.Cli.exe --clear-discord-cache
 ZapretControl.Cli.exe --diagnostics
-ZapretControl.Cli.exe --test=standard|dpi
+ZapretControl.Cli.exe --test                      # полный подбор всего пула
+ZapretControl.Cli.exe --test --gate=1             # эталон для проверки эквивалентности
+ZapretControl.Cli.exe --test=standard|dpi         # алиас проверки текущей стратегии
 ZapretControl.Cli.exe --youtube-probe
 ZapretControl.Cli.exe --update-check
 ZapretControl.Cli.exe --update-payload | --update-app | --rollback-payload
@@ -245,9 +249,15 @@ ZapretControl.Cli.exe --update-payload | --update-app | --rollback-payload
 
 Вывод — `key=value`; машинные значения английские, `*_display` — русские.
 Ошибки пишутся в stderr как `error=...`. Команды, меняющие службу, payload,
-hosts, задачу и настройки, требуют прав администратора. `--youtube-probe`
-проверяет страницу, player response и три фрагмента видео с `googlevideo` и
-возвращает 0, только если медиа реально скачивается.
+hosts, задачу и настройки, требуют прав администратора. `--test` требует admin:
+он останавливает службу, переключает IPSet в `any`, перебирает весь пул `.bat`
+и восстанавливает состояние в `finally`. `--test=standard|dpi` — алиасы
+проверки текущей стратегии без остановки службы и без переключения IPSet.
+`--youtube-probe` проверяет страницу, player response и два ролика по три
+фрагмента видео с `googlevideo` (TLS 1.2/1.3 отдельно) и возвращает 0, только
+если медиа реально скачивается. Для DPI-заморозки нужен
+`%SystemRoot%\System32\curl.exe`; без него этап пропускается, а полная
+рекомендация невозможна.
 
 Коды `--status`: 0 Running, 1 Stopped, 2 переходное/неизвестное, 3 не
 установлена, 4 нет прав, 64 неверные аргументы. `--iface`: 0 совпадает,
@@ -274,14 +284,16 @@ hosts, задачу и настройки, требуют прав админи�
   staging, backup, атомарная замена, сохранение пользовательских файлов,
   откат, обрезка старых копий.
 - `IpsetManager`, `FakesManager`, `HostsManager`, `DiscordCache`,
-  `Diagnostics`, `ConnectionTests`, `YouTubeProbe` — функции `service.bat` без
-  bat/PowerShell; `YouTubeProbe` разбирает player response, `YouTubeHttp`
-  скачивает фрагменты `googlevideo`, `ConnectionTests` включает его в DPI-тест.
-- `StrategyAdvisor` — запускает временный `winws.exe`, проверяет Discord,
-  страницу/плеер/видео YouTube и Google, сортирует полные и частичные
-  результаты; `HomeTab` показывает их в `StrategyResultsForm`, а
-  `StrategyReportStore` сохраняет последний отчёт для кнопки «Последняя
-  проверка».
+  `Diagnostics` — функции `service.bat` без bat/PowerShell.
+- `UnifiedCheck`, `StandardProbe`, `TlsHttp`, `FreezeProbe`, `Concurrency`,
+  `YouTubeProbe`/`YouTubeHttp` — единая проверка стратегии: параллельные хосты
+  и TLS-версии, DPI-заморозка через `curl.exe`, страница/плеер/2×3 фрагмента
+  `googlevideo`, общий семафор на 16 соединений.
+- `StrategyAdvisor` — последовательно запускает временный `winws.exe` по всему
+  пулу `.bat`, переключает IPSet в `any` с флагом и восстановлением, ранжирует
+  полные и частичные результаты; `HomeTab` показывает их в
+  `StrategyResultsForm`, а `StrategyReportStore` сохраняет последний отчёт для
+  кнопки «Последняя проверка».
 - `UpdateManifest` / `UpdateService` / `SignatureVerifier` — dual-update,
   `release.json`, SHA256, WinVerifyTrust, запуск Setup.
 - `SetupEngine` / `SetupForm` / `SetupProgram` — установка, обновление,

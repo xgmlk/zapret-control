@@ -1,10 +1,53 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Security.Authentication;
+using System.Text;
 using System.Web.Script.Serialization;
 
 namespace ZapretControl
 {
+    public sealed class YouTubeVideoResult
+    {
+        public string VideoId { get; private set; }
+        public bool StreamResolved { get; internal set; }
+        public int Attempts { get; internal set; }
+        public int Successes { get; internal set; }
+        public long Bytes { get; internal set; }
+        public bool Tls12Attempted { get; internal set; }
+        public bool Tls12Ok { get; internal set; }
+        public bool Tls13Attempted { get; internal set; }
+        public bool Tls13Ok { get; internal set; }
+        public string Detail { get; internal set; }
+
+        public YouTubeVideoResult(string videoId)
+        {
+            VideoId = videoId ?? string.Empty;
+            Detail = string.Empty;
+        }
+
+        public bool Ok
+        {
+            get
+            {
+                return StreamResolved &&
+                       YouTubeProbe.IsVideoOk(Successes, Attempts);
+            }
+        }
+
+        public string Display
+        {
+            get
+            {
+                if (!StreamResolved)
+                {
+                    return VideoId + ": нет потока";
+                }
+                return VideoId + ": " + Successes + "/" + Attempts;
+            }
+        }
+    }
+
     public sealed class YouTubeProbeResult
     {
         public string VideoId { get; private set; }
@@ -18,6 +61,11 @@ namespace ZapretControl
         public string PageDetail { get; private set; }
         public string PlayerDetail { get; private set; }
         public string CdnDetail { get; private set; }
+        public bool Tls12Attempted { get; private set; }
+        public bool Tls12Ok { get; private set; }
+        public bool Tls13Attempted { get; private set; }
+        public bool Tls13Ok { get; private set; }
+        public List<YouTubeVideoResult> Videos { get; private set; }
 
         public YouTubeProbeResult(string videoId)
         {
@@ -25,7 +73,7 @@ namespace ZapretControl
             PageDetail = string.Empty;
             PlayerDetail = string.Empty;
             CdnDetail = string.Empty;
-            Attempts = 0;
+            Videos = new List<YouTubeVideoResult>();
         }
 
         public string Detail
@@ -74,17 +122,38 @@ namespace ZapretControl
             ElapsedMs = elapsedMs;
         }
 
+        internal void SetTls(
+            bool tls12Attempted, bool tls12Ok,
+            bool tls13Attempted, bool tls13Ok)
+        {
+            Tls12Attempted = tls12Attempted;
+            Tls12Ok = tls12Ok;
+            Tls13Attempted = tls13Attempted;
+            Tls13Ok = tls13Ok;
+        }
+
+        internal void AddVideo(YouTubeVideoResult video)
+        {
+            if (video != null)
+            {
+                Videos.Add(video);
+            }
+        }
+
         private static string Text(string value)
         {
             return string.IsNullOrEmpty(value) ? "нет данных" : value;
         }
     }
 
-    // Deep YouTube check: watch page, player response and a real media fragment
-    // from googlevideo.com. The fragment is downloaded more than once because
-    // DPI can allow the page and then throttle or reset the media stream.
+    // Full YouTube pipeline for one strategy: watch page, player response and
+    // two videos with three 384 KB fragments each. The player stage starts as
+    // soon as the page is parsed, while the parallel host and freeze stages of
+    // the caller continue to run behind the shared connection gate.
     public static class YouTubeProbe
     {
+        private const int FragmentTotalTimeoutMs = 6000;
+
         private static readonly string[] VideoIds = new string[]
         {
             "dQw4w9WgXcQ",
@@ -93,45 +162,34 @@ namespace ZapretControl
 
         public static YouTubeProbeResult Run(int timeoutMs, int attempts)
         {
-            YouTubeHttp.EnableTls();
-            int value = attempts < 1 ? 1 : (attempts > 3 ? 3 : attempts);
-            YouTubeProbeResult best = null;
-            for (int i = 0; i < VideoIds.Length; i++)
+            using (NetworkGate gate = new NetworkGate(16))
             {
-                YouTubeProbeResult result = ProbeVideo(VideoIds[i], timeoutMs, value);
-                if (best == null || Score(result) > Score(best))
-                {
-                    best = result;
-                }
-                if (result.PageOk && result.PlayerOk)
-                {
-                    // A working player is enough to judge the media path. Do not
-                    // hide a CDN failure behind a fallback video.
-                    return result;
-                }
+                return Run(gate, timeoutMs, attempts);
             }
-            return best == null ? new YouTubeProbeResult(string.Empty) : best;
         }
 
-        internal static YouTubeProbeResult ProbeVideo(
-            string videoId, int timeoutMs, int attempts)
+        internal static YouTubeProbeResult Run(
+            NetworkGate gate, int requestTimeoutMs, int fragmentsPerVideo)
         {
+            YouTubeHttp.EnableTls();
+            int fragments = fragmentsPerVideo < 1
+                ? 1
+                : (fragmentsPerVideo > 3 ? 3 : fragmentsPerVideo);
             Stopwatch watch = Stopwatch.StartNew();
-            YouTubeProbeResult result = new YouTubeProbeResult(videoId);
-            string url = "https://www.youtube.com/watch?v=" + videoId +
-                         "&hl=en&gl=US&has_verified=1&bpctr=9999999999";
+            YouTubeProbeResult result = new YouTubeProbeResult(VideoIds[0]);
+
             string html;
             int code;
             string error;
-            if (!YouTubeHttp.GetText(url, timeoutMs, out html, out code, out error))
+            if (!FetchPage(gate, VideoIds[0], requestTimeoutMs, out html, out code, out error))
             {
                 watch.Stop();
                 result.SetPage(false, error, watch.ElapsedMilliseconds);
                 return result;
             }
-            watch.Stop();
             if (code != 200 || string.IsNullOrEmpty(html))
             {
+                watch.Stop();
                 result.SetPage(false, "HTTP " + code, watch.ElapsedMilliseconds);
                 return result;
             }
@@ -140,127 +198,380 @@ namespace ZapretControl
                 "HTTP 200, " + html.Length + " символов",
                 watch.ElapsedMilliseconds);
 
-            string json = ExtractPlayerResponse(html);
-            if (string.IsNullOrEmpty(json))
+            object pageRoot = null;
+            string pageJson = ExtractPlayerResponse(html);
+            if (!string.IsNullOrEmpty(pageJson))
             {
-                result.SetPlayer(false, "player response не найден");
-                return result;
-            }
-
-            object root;
-            string parseError;
-            if (!TryParseJson(json, out root, out parseError))
-            {
-                result.SetPlayer(
-                    false, "player response не разобран: " + parseError);
-                return result;
-            }
-
-            string status = GetString(Get(root, "playabilityStatus", "status"));
-            string streamUrl = string.Equals(
-                status, "OK", StringComparison.OrdinalIgnoreCase)
-                ? FindStreamUrl(root)
-                : null;
-            string apiNote = string.Empty;
-            if (string.IsNullOrEmpty(streamUrl))
-            {
-                // The watch page often returns streamingData without direct
-                // googlevideo URLs (signatureCipher only), and some IPs get a
-                // LOGIN_REQUIRED page. The Android VR innertube client returns
-                // direct URLs and needs no decipher.
-                string apiError;
-                string apiJson = YouTubeHttp.RequestPlayerJson(
-                    videoId, GetApiKey(html), timeoutMs, out apiError);
-                if (string.IsNullOrEmpty(apiJson))
+                object parsed;
+                string parseError;
+                if (TryParseJson(pageJson, out parsed, out parseError))
                 {
-                    apiNote = "API: " + Text(apiError);
+                    pageRoot = parsed;
+                }
+            }
+            string apiKey = GetApiKey(html);
+
+            string[] urls = new string[VideoIds.Length];
+            string[] notes = new string[VideoIds.Length];
+            Action[] resolve = new Action[VideoIds.Length];
+            for (int i = 0; i < VideoIds.Length; i++)
+            {
+                int index = i;
+                resolve[i] = delegate()
+                {
+                    try
+                    {
+                        string note;
+                        urls[index] = ResolveStreamUrl(
+                            VideoIds[index],
+                            index == 0 ? pageRoot : null,
+                            apiKey,
+                            gate,
+                            requestTimeoutMs,
+                            out note);
+                        notes[index] = note;
+                    }
+                    catch (Exception ex)
+                    {
+                        urls[index] = null;
+                        notes[index] = ex.GetType().Name + ": " + ex.Message;
+                    }
+                };
+            }
+            ParallelWork.RunAll(resolve, null);
+
+            int resolved = 0;
+            StringBuilder playerNotes = new StringBuilder();
+            for (int i = 0; i < urls.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(urls[i]))
+                {
+                    resolved++;
+                }
+                if (playerNotes.Length > 0)
+                {
+                    playerNotes.Append("; ");
+                }
+                playerNotes.Append(VideoIds[i]).Append(": ")
+                    .Append(string.IsNullOrEmpty(urls[i])
+                        ? Text(notes[i])
+                        : "поток есть");
+            }
+            if (resolved == 0)
+            {
+                watch.Stop();
+                result.SetPlayer(false, "нет URL googlevideo: " + playerNotes);
+                return result;
+            }
+            result.SetPlayer(true, "потоки: " + resolved + " из " + VideoIds.Length);
+
+            YouTubeVideoResult[] videos = new YouTubeVideoResult[VideoIds.Length];
+            List<Action> actions = new List<Action>();
+            for (int i = 0; i < VideoIds.Length; i++)
+            {
+                YouTubeVideoResult video = new YouTubeVideoResult(VideoIds[i]);
+                videos[i] = video;
+                if (string.IsNullOrEmpty(urls[i]))
+                {
+                    video.Detail = Text(notes[i]);
+                    result.AddVideo(video);
+                    continue;
+                }
+                video.StreamResolved = true;
+                video.Attempts = fragments;
+                string url = urls[i];
+                for (int fragment = 0; fragment < fragments; fragment++)
+                {
+                    int fragmentIndex = fragment;
+                    actions.Add(delegate()
+                    {
+                        try
+                        {
+                            DownloadFragment(
+                                video, url, fragmentIndex, fragments,
+                                gate, requestTimeoutMs);
+                        }
+                        catch (Exception ex)
+                        {
+                            lock (video)
+                            {
+                                if (video.Detail.Length == 0)
+                                {
+                                    video.Detail = ex.GetType().Name +
+                                                   ": " + ex.Message;
+                                }
+                            }
+                        }
+                    });
+                }
+                result.AddVideo(video);
+            }
+            ParallelWork.RunAll(actions, null);
+
+            int totalSuccesses = 0;
+            int totalAttempts = 0;
+            long totalBytes = 0;
+            bool anyVideoOk = false;
+            bool tls12Attempted = false;
+            bool tls12Ok = true;
+            bool tls13Attempted = false;
+            bool tls13Ok = true;
+            StringBuilder cdnDetail = new StringBuilder();
+            foreach (YouTubeVideoResult video in videos)
+            {
+                totalSuccesses += video.Successes;
+                totalAttempts += video.Attempts;
+                totalBytes += video.Bytes;
+                anyVideoOk = anyVideoOk || video.Ok;
+                if (video.Tls12Attempted)
+                {
+                    tls12Attempted = true;
+                    tls12Ok = tls12Ok && video.Tls12Ok;
+                }
+                if (video.Tls13Attempted)
+                {
+                    tls13Attempted = true;
+                    tls13Ok = tls13Ok && video.Tls13Ok;
+                }
+                if (cdnDetail.Length > 0)
+                {
+                    cdnDetail.Append("; ");
+                }
+                cdnDetail.Append(video.Display);
+            }
+            watch.Stop();
+            result.SetTls(tls12Attempted, tls12Ok, tls13Attempted, tls13Ok);
+            result.SetCdn(
+                anyVideoOk,
+                totalAttempts,
+                totalSuccesses,
+                totalBytes,
+                cdnDetail.ToString(),
+                watch.ElapsedMilliseconds);
+            return result;
+        }
+
+        // A video passes with 2 of 3 fragments; with a shorter attempt list it
+        // needs one fragment.
+        internal static bool IsVideoOk(int successes, int attempts)
+        {
+            if (attempts < 1)
+            {
+                return false;
+            }
+            int required = attempts >= 2 ? 2 : 1;
+            return successes >= required;
+        }
+
+        // Regression helper for the selftest: one working video is enough even
+        // when the second one fails completely.
+        internal static bool CombineVideos(int[] successes, int attemptsPerVideo)
+        {
+            if (successes == null || attemptsPerVideo < 1)
+            {
+                return false;
+            }
+            foreach (int value in successes)
+            {
+                if (IsVideoOk(value, attemptsPerVideo))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        internal static YouTubeProbeResult ProbeVideo(
+            string videoId, int timeoutMs, int attempts)
+        {
+            NetworkGate gate = new NetworkGate(16);
+            try
+            {
+                return Run(gate, timeoutMs, attempts);
+            }
+            finally
+            {
+                gate.Dispose();
+            }
+        }
+
+        private static void DownloadFragment(
+            YouTubeVideoResult video,
+            string url,
+            int index,
+            int fragments,
+            NetworkGate gate,
+            int requestTimeoutMs)
+        {
+            SslProtocols protocols = SslProtocols.Tls12;
+            bool pinned = false;
+            string label = "по умолчанию";
+            if (fragments >= 2 && index == 1)
+            {
+                pinned = true;
+                protocols = SslProtocols.Tls12;
+                label = "TLS1.2";
+            }
+            else if (fragments >= 3 && index == 2)
+            {
+                pinned = true;
+                protocols = TlsHttp.Tls13;
+                label = "TLS1.3";
+            }
+
+            long start = (long)index * YouTubeHttp.FragmentBytes;
+            int received = 0;
+            string detail = string.Empty;
+            bool ok;
+            gate.Enter();
+            // Start the 6 s budget after the gate: queue wait is not network
+            // time and must not turn a fast fragment into a failure.
+            Stopwatch watch = Stopwatch.StartNew();
+            try
+            {
+                if (pinned)
+                {
+                    ok = TlsHttp.DownloadRange(
+                        url, start, YouTubeHttp.FragmentBytes, protocols,
+                        requestTimeoutMs, FragmentTotalTimeoutMs,
+                        out received, out detail);
                 }
                 else
                 {
-                    object apiRoot;
-                    string apiParseError;
-                    if (TryParseJson(apiJson, out apiRoot, out apiParseError))
-                    {
-                        string apiStatus = GetString(
-                            Get(apiRoot, "playabilityStatus", "status"));
-                        string apiUrl = string.Equals(
-                            apiStatus, "OK", StringComparison.OrdinalIgnoreCase)
-                            ? FindStreamUrl(apiRoot)
-                            : null;
-                        if (!string.IsNullOrEmpty(apiUrl))
-                        {
-                            root = apiRoot;
-                            status = apiStatus;
-                            streamUrl = apiUrl;
-                        }
-                        else
-                        {
-                            apiNote = "API: " + Text(apiStatus);
-                        }
-                    }
-                    else
-                    {
-                        apiNote = "API JSON: " + apiParseError;
-                    }
+                    ok = YouTubeHttp.DownloadRange(
+                        url, start, YouTubeHttp.FragmentBytes,
+                        FragmentTotalTimeoutMs, out received, out detail);
                 }
             }
-            if (!string.Equals(status, "OK", StringComparison.OrdinalIgnoreCase))
+            finally
             {
-                string reason = GetString(Get(root, "playabilityStatus", "reason"));
-                result.SetPlayer(
-                    false,
-                    "playabilityStatus=" + Text(status) +
-                    (string.IsNullOrEmpty(reason) ? string.Empty : ", " + reason));
-                return result;
+                gate.Exit();
             }
-            if (string.IsNullOrEmpty(streamUrl))
+            watch.Stop();
+            bool success = ok &&
+                           received >= YouTubeHttp.MinFragmentBytes &&
+                           watch.ElapsedMilliseconds <= FragmentTotalTimeoutMs;
+            lock (video)
             {
-                result.SetPlayer(
-                    false,
-                    "в streamingData нет URL googlevideo" +
-                    (string.IsNullOrEmpty(apiNote) ? string.Empty : " (" + apiNote + ")"));
-                return result;
+                if (index == 1)
+                {
+                    video.Tls12Attempted = true;
+                    video.Tls12Ok = success;
+                }
+                else if (index == 2)
+                {
+                    video.Tls13Attempted = true;
+                    video.Tls13Ok = success;
+                }
+                if (success)
+                {
+                    video.Successes++;
+                    video.Bytes += received;
+                }
+                if (video.Detail.Length == 0 && !success)
+                {
+                    video.Detail = label + ": " + Text(detail);
+                }
             }
-            result.SetPlayer(true, "streamingData получен");
+        }
 
-            Stopwatch cdnWatch = Stopwatch.StartNew();
-            int successes = 0;
-            long bytes = 0;
-            string lastDetail = string.Empty;
-            string failureDetail = string.Empty;
-            for (int i = 0; i < attempts; i++)
+        private static bool FetchPage(
+            NetworkGate gate,
+            string videoId,
+            int timeoutMs,
+            out string html,
+            out int code,
+            out string error)
+        {
+            string url = "https://www.youtube.com/watch?v=" + videoId +
+                         "&hl=en&gl=US&has_verified=1&bpctr=9999999999";
+            gate.Enter();
+            try
             {
-                long start = (long)i * YouTubeHttp.FragmentBytes;
-                int received;
-                string detail;
-                bool ok = YouTubeHttp.DownloadRange(
-                    streamUrl, start, YouTubeHttp.FragmentBytes, timeoutMs,
-                    out received, out detail);
-                lastDetail = detail;
-                if (ok)
+                return YouTubeHttp.GetText(url, timeoutMs, out html, out code, out error);
+            }
+            finally
+            {
+                gate.Exit();
+            }
+        }
+
+        private static string ResolveStreamUrl(
+            string videoId,
+            object pageRoot,
+            string apiKey,
+            NetworkGate gate,
+            int timeoutMs,
+            out string note)
+        {
+            note = string.Empty;
+            if (pageRoot != null)
+            {
+                string status = GetString(Get(pageRoot, "playabilityStatus", "status"));
+                if (string.Equals(status, "OK", StringComparison.OrdinalIgnoreCase))
                 {
-                    successes++;
-                    bytes += received;
+                    string pageUrl = FindStreamUrl(pageRoot);
+                    if (!string.IsNullOrEmpty(pageUrl))
+                    {
+                        note = "страница";
+                        return pageUrl;
+                    }
+                    note = "страница без прямого URL";
                 }
-                else if (string.IsNullOrEmpty(failureDetail))
+                else
                 {
-                    failureDetail = detail;
+                    note = "playabilityStatus=" + Text(status);
                 }
             }
-            cdnWatch.Stop();
-            bool cdnOk = successes >= (attempts == 1 ? 1 : 2);
-            string summary = successes + " из " + attempts + " фрагментов, " +
-                             (bytes / 1024) + " КБ";
-            if (!cdnOk)
+
+            string apiError;
+            string apiJson;
+            gate.Enter();
+            try
             {
-                summary += " (" + (string.IsNullOrEmpty(failureDetail)
-                    ? lastDetail
-                    : failureDetail) + ")";
+                apiJson = YouTubeHttp.RequestPlayerJson(
+                    videoId, apiKey, timeoutMs, out apiError);
             }
-            result.SetCdn(
-                cdnOk, attempts, successes, bytes, summary,
-                result.ElapsedMs + cdnWatch.ElapsedMilliseconds);
-            return result;
+            finally
+            {
+                gate.Exit();
+            }
+            if (string.IsNullOrEmpty(apiJson))
+            {
+                note = AppendNote(note, "API: " + Text(apiError));
+                return null;
+            }
+            object apiRoot;
+            string apiParseError;
+            if (!TryParseJson(apiJson, out apiRoot, out apiParseError))
+            {
+                note = AppendNote(note, "API JSON: " + Text(apiParseError));
+                return null;
+            }
+            string apiStatus = GetString(
+                Get(apiRoot, "playabilityStatus", "status"));
+            if (!string.Equals(apiStatus, "OK", StringComparison.OrdinalIgnoreCase))
+            {
+                note = AppendNote(note, "API status=" + Text(apiStatus));
+                return null;
+            }
+            string apiUrl = FindStreamUrl(apiRoot);
+            if (string.IsNullOrEmpty(apiUrl))
+            {
+                note = AppendNote(note, "API без URL googlevideo");
+                return null;
+            }
+            note = AppendNote(note, "API");
+            return apiUrl;
+        }
+
+        private static string AppendNote(string current, string next)
+        {
+            if (string.IsNullOrEmpty(current))
+            {
+                return next;
+            }
+            return current + "; " + next;
         }
 
         internal static string ExtractPlayerResponse(string html)
@@ -490,28 +801,6 @@ namespace ZapretControl
         private static string Text(string value)
         {
             return string.IsNullOrEmpty(value) ? "нет данных" : value;
-        }
-
-        private static int Score(YouTubeProbeResult result)
-        {
-            if (result == null)
-            {
-                return 0;
-            }
-            int score = 0;
-            if (result.PageOk)
-            {
-                score += 1;
-            }
-            if (result.PlayerOk)
-            {
-                score += 2;
-            }
-            if (result.CdnOk)
-            {
-                score += 4;
-            }
-            return score;
         }
     }
 }

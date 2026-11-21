@@ -81,6 +81,8 @@ namespace ZapretControl
 
             HomeTab homeTab = (HomeTab)_tabs[0];
             TestsTab testsTab = (TestsTab)_tabs[7];
+            UpdatesTab updatesTab = (UpdatesTab)_tabs[5];
+            updatesTab.AppUpdateAvailable += OnAppUpdateAvailable;
             homeTab.CheckCompleted += delegate(HomeCheckReport report)
             {
                 testsTab.ShowReport(report);
@@ -88,6 +90,11 @@ namespace ZapretControl
             homeTab.DetailsRequested += delegate
             {
                 ActivateTab(7);
+            };
+            testsTab.AdviseRequested += delegate
+            {
+                ActivateTab(0);
+                homeTab.StartAdvice(true);
             };
 
             _tabButtons = new Button[_tabs.Length];
@@ -404,6 +411,26 @@ namespace ZapretControl
             }
         }
 
+        private void OnAppUpdateAvailable(UpdateCheckResult result)
+        {
+            if (IsDisposed || Disposing || result == null)
+            {
+                return;
+            }
+            string text = "Доступна новая версия Zapret Control " +
+                result.LatestAppVersion + " (установлена " + AppInfo.Version +
+                ").\nОткрыть вкладку «Обновления»?";
+            if (MessageBox.Show(
+                    this,
+                    text,
+                    "Обновление Zapret Control",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Information) == DialogResult.Yes)
+            {
+                ActivateTab(5);
+            }
+        }
+
         private void RefreshActiveTab()
         {
             if (_activeIndex < 0 || IsDisposed || Disposing)
@@ -421,7 +448,7 @@ namespace ZapretControl
                 e.Cancel = true;
                 MessageBox.Show(
                     this,
-                    "Дождитесь завершения операции со службой или payload.",
+                    "Дождитесь завершения текущей операции.",
                     "Zapret Control",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
