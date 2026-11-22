@@ -24,9 +24,10 @@ namespace ZapretControl
         {
             CardPanel card = AddCard("ПРОВЕРКА СОЕДИНЕНИЙ", 0, 0, 852, 470);
             AddMutedLabel(card,
-                "Единая проверка: Discord, YouTube, Google и Cloudflare по HTTP/1.1, " +
-                "TLS 1.2 и TLS 1.3, страница YouTube, плеер, два видео по три " +
-                "фрагмента и DPI-заморозка 16–20 КБ через curl.exe.",
+                "Единая проверка: Discord, YouTube, Google, Cloudflare и " +
+                "Telegram по HTTP/1.1, TLS 1.2 и TLS 1.3, страница YouTube, " +
+                "плеер, два видео по три фрагмента и DPI-заморозка 16–20 КБ " +
+                "через curl.exe.",
                 20, 34, 812, 52);
             _check = AddButton(card, "Проверить", 20, 94, 130, 32, OnCheck);
             _advise = AddButton(card, "Подобрать", 160, 94, 140, 32, OnAdvise);

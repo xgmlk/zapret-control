@@ -51,6 +51,13 @@ namespace ZapretControl
         public string VideoDetail { get; internal set; }
         public string HostsDetail { get; internal set; }
 
+        // Informational: several strategies work for Discord/YouTube while
+        // Telegram is blocked by IP, which only the local proxy solves.
+        public bool TelegramOk { get; internal set; }
+        public int TelegramPassed { get; internal set; }
+        public int TelegramTotal { get; internal set; }
+        public string TelegramDetail { get; internal set; }
+
         public StrategyProbeResult(string name, string path)
         {
             Name = name ?? string.Empty;
@@ -59,6 +66,7 @@ namespace ZapretControl
             FreezeDetail = string.Empty;
             VideoDetail = string.Empty;
             HostsDetail = string.Empty;
+            TelegramDetail = string.Empty;
         }
 
         public bool YouTubeStageOk
@@ -226,7 +234,8 @@ namespace ZapretControl
                        ", видео " + VideoDisplay +
                        " · Google " + Counts(GooglePassed, GoogleTotal) +
                        " · DPI " + FreezeDisplay +
-                       " · Cloudflare " + Counts(CloudflarePassed, CloudflareTotal);
+                       " · Cloudflare " + Counts(CloudflarePassed, CloudflareTotal) +
+                       " · Telegram " + Counts(TelegramPassed, TelegramTotal);
             }
         }
 

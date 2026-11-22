@@ -94,6 +94,8 @@ $common = Select-Sources @(
     'Concurrency', 'TlsHttp', 'StandardProbe', 'FreezeProbe', 'UnifiedCheck',
     'YouTubeProbe', 'YouTubeHttp', 'HomeCheck', 'StrategyAdvisor',
     'StrategyReportStore',
+    'TgAesCtr', 'TgProtocol', 'TgWebSocket', 'TgMsgSplitter', 'TgFronts',
+    'TgDoh', 'TgProxyService', 'TelegramProbe', 'TelegramCoverage',
     'UpdateManifest', 'UpdateService', 'SignatureVerifier', 'AclInstaller',
     'SyncTask', 'PayloadPin', 'AssemblyInfo'
 )
@@ -101,7 +103,7 @@ $common = Select-Sources @(
 $guiSources = $common + (Select-Sources @(
     'Program', 'MainForm', 'ToggleSwitch', 'TrafficLightButton', 'UiDrawing',
     'HomeTab', 'ServiceTab', 'GameTab', 'IpsetTab', 'FakesTab', 'UpdatesTab',
-    'DiagnosticsTab', 'TestsTab', 'TabView', 'HelpForm',
+    'DiagnosticsTab', 'TestsTab', 'TelegramTab', 'TabView', 'HelpForm',
     'StrategyResultsForm', 'FirstRunForm'
 ))
 

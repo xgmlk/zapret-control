@@ -74,6 +74,19 @@ if ($LASTEXITCODE -ne 0) {
     throw "Payload selftest failed (exit $LASTEXITCODE)."
 }
 
+# 1b2. Telegram coverage writes into list-general-user.txt, so the general
+# strategy must actually include that list. Skip when no payload is present
+# (CI builds without the Flowseal distribution).
+if (Test-Path -LiteralPath (Join-Path $root 'dist\zapret\bin\winws.exe')) {
+    $general = & $cli --strategy-command='general'
+    if ($LASTEXITCODE -ne 0) {
+        throw "strategy-command failed for general (exit $LASTEXITCODE)."
+    }
+    if (-not ($general -match 'list-general-user\.txt')) {
+        throw 'general strategy does not include list-general-user.txt; Telegram coverage would be inert.'
+    }
+}
+
 # 1c. Setup self-test (embedded GUI/CLI/icon, parser and manifest helpers).
 $setup = Join-Path $root 'dist\ZapretControl.Setup.exe'
 if (-not (Test-Path -LiteralPath $setup)) {

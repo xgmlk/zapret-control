@@ -50,8 +50,8 @@ namespace ZapretControl
             DoubleBuffered = true;
 
             _titleFont = new Font("Segoe UI", 9.5F, FontStyle.Regular);
-            _tabFont = new Font("Segoe UI", 8.5F, FontStyle.Regular);
-            _tabActiveFont = new Font("Segoe UI", 8.5F, FontStyle.Bold);
+            _tabFont = new Font("Segoe UI", 8.25F, FontStyle.Regular);
+            _tabActiveFont = new Font("Segoe UI", 8.25F, FontStyle.Bold);
             _footerFont = new Font("Segoe UI", 8F, FontStyle.Regular);
 
             _lights = new TrafficLightButton[3];
@@ -76,7 +76,8 @@ namespace ZapretControl
                 new FakesTab(),
                 new UpdatesTab(),
                 new DiagnosticsTab(),
-                new TestsTab()
+                new TestsTab(),
+                new TelegramTab()
             };
 
             HomeTab homeTab = (HomeTab)_tabs[0];
@@ -114,7 +115,7 @@ namespace ZapretControl
                 button.FlatAppearance.MouseOverBackColor = Color.FromArgb(241, 238, 232);
                 button.UseVisualStyleBackColor = false;
                 button.Cursor = Cursors.Hand;
-                button.SetBounds(24 + i * 106, 50, 100, 36);
+                button.SetBounds(24 + i * 92, 50, 88, 36);
                 button.Tag = i;
                 button.Click += OnTabClick;
                 button.AccessibleName = _tabs[i].TabTitle;
@@ -145,6 +146,7 @@ namespace ZapretControl
             {
                 ActivateTab(0);
                 RefreshActiveTab();
+                ((TelegramTab)_tabs[8]).StartIfConfigured();
                 BeginInvoke(new Action(CheckFirstRunAndUpdates));
             };
             FormClosing += OnFormClosing;

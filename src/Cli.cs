@@ -20,7 +20,8 @@ namespace ZapretControl
             "--update-ipset|--fakes|--replace-fake=<kind> --file=<name>|" +
             "--hosts-check|--hosts-apply|--clear-discord-cache|--diagnostics|" +
             "--test[=<standard|dpi>] [--gate=1..16]|--youtube-probe|--update-check|" +
-            "--update-payload|--update-app|--rollback-payload";
+            "--update-payload|--update-app|--rollback-payload|--tg-check|" +
+            "--tg-selftest|--tg-status|--tg-link";
 
         private static int Main(string[] args)
         {
@@ -166,6 +167,22 @@ namespace ZapretControl
                 if (command == "--youtube-probe")
                 {
                     return ProbeYouTube();
+                }
+                if (command == "--tg-check")
+                {
+                    return CheckTelegram();
+                }
+                if (command == "--tg-selftest")
+                {
+                    return SelfTestTelegramProxy();
+                }
+                if (command == "--tg-status")
+                {
+                    return PrintTelegramStatus();
+                }
+                if (command == "--tg-link")
+                {
+                    return PrintTelegramLink();
                 }
                 if (command == "--update-check")
                 {
@@ -950,6 +967,112 @@ namespace ZapretControl
             return result.CdnOk ? 0 : 1;
         }
 
+        private static int CheckTelegram()
+        {
+            TelegramProbeReport report;
+            using (NetworkGate gate = new NetworkGate(16))
+            {
+                report = TelegramProbe.Run(gate, 4000);
+            }
+            foreach (TelegramProbeItem item in report.Items)
+            {
+                Console.WriteLine("check=" + (item.Success ? "OK" : "FAIL") +
+                    " " + item.Name + " " + item.Detail +
+                    (item.Informational ? " info=true" : string.Empty));
+            }
+            Console.WriteLine("dc=" + report.DcPassed + "/" + report.DcTotal);
+            Console.WriteLine("web=" + (report.WebOk ? "OK" : "FAIL"));
+            Console.WriteLine("doh=" + (report.DohOk ? "OK" : "FAIL"));
+            Console.WriteLine("telegram=" + (report.Ok ? "OK" : "FAIL"));
+            return report.Ok ? 0 : 1;
+        }
+
+        private static int SelfTestTelegramProxy()
+        {
+            TgProxyService service = new TgProxyService();
+            service.PublishStatus = false;
+            service.LogLine += delegate(string message)
+            {
+                Console.WriteLine("log=" + message);
+            };
+            try
+            {
+                service.Configure(0, null);
+                if (!service.Start())
+                {
+                    Console.Error.WriteLine(
+                        "error=" + (service.StartError ?? "start_failed"));
+                    return 1;
+                }
+                Console.WriteLine("port=" + service.Port);
+                Console.WriteLine("secret=dd" + service.SecretHex);
+                Console.WriteLine("link=" + service.ProxyLink);
+                string upstream = service.SelfTestAsync(
+                    System.Threading.CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                Console.WriteLine("upstream=" + upstream);
+                string bridge = service.BridgeSelfTestAsync(
+                    2, System.Threading.CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                Console.WriteLine("bridge=" + bridge);
+                return bridge.StartsWith("МОСТ OK", StringComparison.Ordinal)
+                    ? 0
+                    : 1;
+            }
+            finally
+            {
+                service.Dispose();
+            }
+        }
+
+        private static int PrintTelegramStatus()
+        {
+            TgProxyStatusInfo status = TgProxyService.ReadStatusFile();
+            Console.WriteLine("running=" + (status.Running ? "true" : "false"));
+            Console.WriteLine("port=" +
+                (status.Port > 0 ? status.Port.ToString() : string.Empty));
+            Console.WriteLine("secret=" + (status.Secret ?? string.Empty));
+            Console.WriteLine("started_utc=" + (status.StartedUtc ?? string.Empty));
+            return status.Running ? 0 : 1;
+        }
+
+        private static int PrintTelegramLink()
+        {
+            SettingsData settings = Settings.Load();
+            TgProxyStatusInfo status = TgProxyService.ReadStatusFile();
+            int port = status.Port > 0 ? status.Port : settings.TgProxyPort;
+            string secret = status.Secret;
+            if (string.IsNullOrEmpty(secret))
+            {
+                secret = settings.TgProxySecret;
+                if (!string.IsNullOrEmpty(secret) &&
+                    !secret.StartsWith("dd", StringComparison.Ordinal))
+                {
+                    secret = "dd" + secret;
+                }
+            }
+            if (string.IsNullOrEmpty(secret))
+            {
+                // Stable secret before the GUI ever starts: the proxy link is
+                // useless if it changes on every launch.
+                string hex = TgProtocol.ToHex(TgProtocol.RandomBytes(16));
+                settings.TgProxySecret = hex;
+                Settings.Save();
+                secret = "dd" + hex;
+            }
+            Console.WriteLine("running=" +
+                (status.Running ? "true" : "false"));
+            Console.WriteLine("server=127.0.0.1");
+            Console.WriteLine("port=" + port);
+            Console.WriteLine("secret=" + (secret ?? string.Empty));
+            if (!string.IsNullOrEmpty(secret))
+            {
+                Console.WriteLine("link=tg://proxy?server=127.0.0.1&port=" +
+                    port + "&secret=" + secret);
+            }
+            return 0;
+        }
+
         private static int CheckUpdates()
         {
             string root = AppPaths.ResolvePayloadRoot();
@@ -1030,6 +1153,11 @@ namespace ZapretControl
             Console.WriteLine("strategy=" + result.StrategyName);
             Console.WriteLine("failed_copy=" + (result.BackupPath ?? string.Empty));
             return 0;
+        }
+
+        private static bool BytesEqual(byte[] left, byte[] right)
+        {
+            return TgProtocol.Equal(left, right);
         }
 
         private static bool RequireAdmin()
@@ -1679,6 +1807,218 @@ namespace ZapretControl
                     PayloadPin.Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 Console.Error.WriteLine("selftest failed: PayloadPin hash");
+                return 1;
+            }
+
+            byte[] aesKey = new byte[32];
+            byte[] aesIv = new byte[16];
+            for (int i = 0; i < aesKey.Length; i++)
+            {
+                aesKey[i] = (byte)(i * 7 + 1);
+            }
+            for (int i = 0; i < aesIv.Length; i++)
+            {
+                aesIv[i] = (byte)(255 - i);
+            }
+            byte[] tgSample = new byte[1000];
+            for (int i = 0; i < tgSample.Length; i++)
+            {
+                tgSample[i] = (byte)(i * 13 + 5);
+            }
+            byte[] whole;
+            using (TgAesCtr cipher = new TgAesCtr(aesKey, aesIv))
+            {
+                whole = cipher.Update(tgSample);
+            }
+            List<byte> streamed = new List<byte>();
+            using (TgAesCtr cipher = new TgAesCtr(aesKey, aesIv))
+            {
+                streamed.AddRange(cipher.Update(
+                    TgProtocol.Slice(tgSample, 0, 7)));
+                streamed.AddRange(cipher.Update(
+                    TgProtocol.Slice(tgSample, 7, 57)));
+                streamed.AddRange(cipher.Update(
+                    TgProtocol.Slice(tgSample, 64, tgSample.Length - 64)));
+            }
+            if (!BytesEqual(whole, streamed.ToArray()))
+            {
+                Console.Error.WriteLine("selftest failed: TgAesCtr streaming");
+                return 1;
+            }
+
+            byte[] tgSecret = new byte[16];
+            for (int i = 0; i < tgSecret.Length; i++)
+            {
+                tgSecret[i] = (byte)(i * 11 + 3);
+            }
+            TgHandshake handshake = TgProtocol.TryHandshake(
+                TgProtocol.GenerateClientInit(
+                    TgProtocol.ProtoTagSecure, 4, tgSecret), tgSecret);
+            if (handshake == null || handshake.Dc != 4 ||
+                handshake.IsMedia ||
+                !TgProtocol.Equal(
+                    handshake.ProtoTag, TgProtocol.ProtoTagSecure))
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: TgProtocol client handshake");
+                return 1;
+            }
+            handshake = TgProtocol.TryHandshake(
+                TgProtocol.GenerateClientInit(
+                    TgProtocol.ProtoTagIntermediate, -2, tgSecret), tgSecret);
+            if (handshake == null || handshake.Dc != 2 ||
+                !handshake.IsMedia ||
+                !TgProtocol.Equal(
+                    handshake.ProtoTag, TgProtocol.ProtoTagIntermediate))
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: TgProtocol media handshake");
+                return 1;
+            }
+            if (TgProtocol.TryHandshake(
+                    TgProtocol.GenerateClientInit(
+                        TgProtocol.ProtoTagSecure, 4, tgSecret),
+                    new byte[16]) != null)
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: a wrong secret was accepted");
+                return 1;
+            }
+
+            byte[] relayInit = TgProtocol.GenerateRelayInit(
+                TgProtocol.ProtoTagIntermediate, 3);
+            byte[] relayPlain;
+            using (TgAesCtr decryptor = new TgAesCtr(
+                TgProtocol.Slice(relayInit, TgProtocol.SkipLen,
+                    TgProtocol.PrekeyLen),
+                TgProtocol.Slice(relayInit,
+                    TgProtocol.SkipLen + TgProtocol.PrekeyLen,
+                    TgProtocol.IvLen)))
+            {
+                relayPlain = decryptor.Update(relayInit);
+            }
+            short relayDc = (short)(relayPlain[TgProtocol.DcIdxPos] |
+                (relayPlain[TgProtocol.DcIdxPos + 1] << 8));
+            if (!TgProtocol.Equal(
+                    TgProtocol.Slice(relayPlain, TgProtocol.ProtoTagPos, 4),
+                    TgProtocol.ProtoTagIntermediate) ||
+                relayDc != 3)
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: TgProtocol relay init");
+                return 1;
+            }
+
+            byte[] messageFrame = new byte[24];
+            TgProtocol.WriteInt32LittleEndian(messageFrame, 0, 20);
+            TgProtocol.WriteUInt32LittleEndian(messageFrame, 4, 0xbe7e8ef1);
+            byte[] encryptedFrame;
+            using (TgAesCtr encryptor = new TgAesCtr(
+                TgProtocol.Slice(relayInit, TgProtocol.SkipLen,
+                    TgProtocol.PrekeyLen),
+                TgProtocol.Slice(relayInit,
+                    TgProtocol.SkipLen + TgProtocol.PrekeyLen,
+                    TgProtocol.IvLen)))
+            {
+                encryptor.Update(new byte[TgProtocol.HandshakeLen]);
+                encryptedFrame = encryptor.Update(messageFrame);
+            }
+            using (TgMsgSplitter splitter = new TgMsgSplitter(
+                relayInit, TgProtocol.ProtoIntermediateInt))
+            {
+                List<byte[]> parts = splitter.Split(encryptedFrame);
+                if (parts.Count != 1 || parts[0].Length != 24 ||
+                    !BytesEqual(parts[0], encryptedFrame))
+                {
+                    Console.Error.WriteLine(
+                        "selftest failed: TgMsgSplitter framing");
+                    return 1;
+                }
+            }
+
+            string[] fronts = TgFronts.AllBaseDomains;
+            if (fronts.Length != 20)
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: TgFronts domain count");
+                return 1;
+            }
+            for (int i = 0; i < fronts.Length; i++)
+            {
+                if (!fronts[i].EndsWith(".co.uk", StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine(
+                        "selftest failed: TgFronts domain " + fronts[i]);
+                    return 1;
+                }
+            }
+            string[] coverage = TelegramCoverage.Domains();
+            if (coverage.Length < 100 ||
+                Array.IndexOf(coverage, "kws2.pclead.co.uk") < 0)
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: TelegramCoverage domains");
+                return 1;
+            }
+            string coverageRoot = Path.Combine(
+                Path.GetTempPath(),
+                "ZapretControl-selftest-coverage-" +
+                Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(
+                    Path.Combine(coverageRoot, "lists"));
+                TelegramCoverageResult applied = TelegramCoverage.Apply(
+                    coverageRoot, true);
+                if (!applied.Ok || !applied.Changed ||
+                    !File.Exists(applied.Path) ||
+                    !TelegramCoverage.IsApplied(coverageRoot))
+                {
+                    Console.Error.WriteLine(
+                        "selftest failed: TelegramCoverage apply");
+                    return 1;
+                }
+                string firstText = File.ReadAllText(applied.Path);
+                TelegramCoverageResult repeated = TelegramCoverage.Apply(
+                    coverageRoot, true);
+                if (!repeated.Ok || repeated.Changed ||
+                    File.ReadAllText(applied.Path) != firstText)
+                {
+                    Console.Error.WriteLine(
+                        "selftest failed: TelegramCoverage is not idempotent");
+                    return 1;
+                }
+                TelegramCoverageResult removedCoverage =
+                    TelegramCoverage.Apply(coverageRoot, false);
+                if (!removedCoverage.Ok || !removedCoverage.Changed ||
+                    TelegramCoverage.IsApplied(coverageRoot) ||
+                    File.ReadAllText(applied.Path).Length != 0)
+                {
+                    Console.Error.WriteLine(
+                        "selftest failed: TelegramCoverage remove");
+                    return 1;
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(coverageRoot))
+                    {
+                        Directory.Delete(coverageRoot, true);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+            SettingsData telegramDefaults = new SettingsData();
+            if (telegramDefaults.TgProxyPort != 1443 ||
+                telegramDefaults.TgProxyAutostart ||
+                !telegramDefaults.TgProxyZapret)
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: Telegram settings defaults");
                 return 1;
             }
 

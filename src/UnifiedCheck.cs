@@ -40,6 +40,7 @@ namespace ZapretControl
             StandardProbeReport standard = null;
             FreezeReport freeze = null;
             YouTubeProbeResult youtube = null;
+            TelegramProbeReport telegram = null;
 
             using (NetworkGate gate = new NetworkGate(value.GateLimit))
             {
@@ -60,6 +61,11 @@ namespace ZapretControl
                         freeze = FreezeProbe.Run(
                             suite, curlPath, payloadFile, gate,
                             value.FreezeTimeoutSeconds, suiteOffline);
+                    },
+                    delegate()
+                    {
+                        telegram = TelegramProbe.Run(
+                            gate, value.RequestTimeoutMs);
                     }
                 };
                 ParallelWork.RunAll(actions, delegate(Exception ex)
@@ -124,6 +130,18 @@ namespace ZapretControl
             else
             {
                 result.FreezeDetail = "DPI-заморозка не проверена";
+            }
+
+            if (telegram != null)
+            {
+                result.TelegramOk = telegram.Ok;
+                result.TelegramPassed = telegram.Passed;
+                result.TelegramTotal = telegram.Total;
+                result.TelegramDetail = telegram.Detail;
+            }
+            else
+            {
+                result.TelegramDetail = "Telegram не проверен";
             }
 
             result.Detail = BuildDetail(result, standard, youtube, freeze);
@@ -204,6 +222,11 @@ namespace ZapretControl
                 {
                     notes.Append(" · Cloudflare ").Append(result.CloudflarePassed)
                         .Append("/").Append(result.CloudflareTotal);
+                }
+                if (result.TelegramTotal > 0 && !result.TelegramOk)
+                {
+                    notes.Append(" · Telegram ").Append(result.TelegramPassed)
+                        .Append("/").Append(result.TelegramTotal);
                 }
                 if (standard != null && standard.Errors.Count > 0)
                 {

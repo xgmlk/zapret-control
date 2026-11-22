@@ -18,6 +18,10 @@ namespace ZapretControl
         public bool RegisterSyncTask { get; set; }
         public string UpdateSignerThumbprint { get; set; }
         public bool FirstRunCompleted { get; set; }
+        public int TgProxyPort { get; set; }
+        public string TgProxySecret { get; set; }
+        public bool TgProxyAutostart { get; set; }
+        public bool TgProxyZapret { get; set; }
 
         public SettingsData()
         {
@@ -32,6 +36,10 @@ namespace ZapretControl
             RegisterSyncTask = true;
             UpdateSignerThumbprint = string.Empty;
             FirstRunCompleted = false;
+            TgProxyPort = 1443;
+            TgProxySecret = string.Empty;
+            TgProxyAutostart = false;
+            TgProxyZapret = true;
         }
     }
 
@@ -141,6 +149,14 @@ namespace ZapretControl
                 if (data.UpdateSignerThumbprint == null)
                 {
                     data.UpdateSignerThumbprint = string.Empty;
+                }
+                if (data.TgProxyPort < 1 || data.TgProxyPort > 65535)
+                {
+                    data.TgProxyPort = 1443;
+                }
+                if (data.TgProxySecret == null)
+                {
+                    data.TgProxySecret = string.Empty;
                 }
                 return data;
             }

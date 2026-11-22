@@ -163,6 +163,14 @@ namespace ZapretControl
                         result.GoogleOk,
                         result.HostsDetail),
                     0));
+                if (result.TelegramTotal > 0)
+                {
+                    report.Results.Add(new ConnectionTestResult(
+                        "Telegram",
+                        result.TelegramOk,
+                        result.TelegramDetail,
+                        0));
+                }
                 report.Results.Add(new ConnectionTestResult(
                     "DPI-заморозка",
                     result.FreezeOk,

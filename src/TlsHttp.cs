@@ -242,6 +242,225 @@ namespace ZapretControl
             }
         }
 
+        // Minimal HTTPS GET used by the DNS-over-HTTPS resolver. Pinned to
+        // TLS 1.2 and independent of the process-wide SecurityProtocol, so it
+        // can run while parallel probes are in flight.
+        internal static bool GetText(
+            string url,
+            int timeoutMs,
+            out int statusCode,
+            out string body,
+            out string detail)
+        {
+            statusCode = 0;
+            body = string.Empty;
+            detail = string.Empty;
+            Uri uri;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out uri) ||
+                !string.Equals(uri.Scheme, Uri.UriSchemeHttps,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                detail = "не HTTPS URL";
+                return false;
+            }
+            Stopwatch watch = Stopwatch.StartNew();
+            TcpClient client = null;
+            SslStream ssl = null;
+            try
+            {
+                string connectError;
+                client = Connect(uri.Host, uri.Port > 0 ? uri.Port : 443,
+                    Remaining(watch, timeoutMs), out connectError);
+                if (client == null)
+                {
+                    detail = connectError;
+                    return false;
+                }
+                string authError;
+                ssl = Authenticate(
+                    client, uri.Host, SslProtocols.Tls12,
+                    Remaining(watch, timeoutMs), out authError);
+                if (ssl == null)
+                {
+                    detail = authError;
+                    return false;
+                }
+                string request = "GET " + uri.PathAndQuery + " HTTP/1.1\r\n" +
+                                 "Host: " + uri.Host + "\r\n" +
+                                 "User-Agent: " + UserAgent + "\r\n" +
+                                 "Accept: application/dns-json\r\n" +
+                                 "Connection: close\r\n\r\n";
+                byte[] data = Encoding.ASCII.GetBytes(request);
+                ssl.Write(data, 0, data.Length);
+                ssl.Flush();
+
+                string statusLine = ReadLine(ssl, 512, watch, timeoutMs);
+                if (!TryParseStatus(statusLine, out statusCode))
+                {
+                    detail = string.IsNullOrEmpty(statusLine)
+                        ? "пустой ответ"
+                        : "не HTTP-ответ";
+                    return false;
+                }
+
+                int contentLength = -1;
+                bool chunked = false;
+                int headerLines = 0;
+                while (true)
+                {
+                    if (headerLines++ >= 100)
+                    {
+                        detail = "слишком много заголовков";
+                        return false;
+                    }
+                    string line = ReadLine(ssl, 1024, watch, timeoutMs);
+                    if (line.Length == 0)
+                    {
+                        break;
+                    }
+                    int colon = line.IndexOf(':');
+                    if (colon <= 0)
+                    {
+                        continue;
+                    }
+                    string name = line.Substring(0, colon).Trim();
+                    string value = line.Substring(colon + 1).Trim();
+                    if (name.Equals("Content-Length",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        int.TryParse(value, NumberStyles.Integer,
+                            CultureInfo.InvariantCulture, out contentLength);
+                    }
+                    else if (name.Equals("Transfer-Encoding",
+                                 StringComparison.OrdinalIgnoreCase) &&
+                             value.IndexOf("chunked",
+                                 StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        chunked = true;
+                    }
+                }
+
+                bool timedOut;
+                byte[] payload = ReadBody(
+                    ssl, chunked, contentLength, timeoutMs, watch, out timedOut);
+                body = Encoding.UTF8.GetString(payload);
+                detail = "HTTP " + statusCode + ", " + payload.Length + " байт";
+                if (timedOut)
+                {
+                    detail += ", таймаут";
+                }
+                return statusCode == 200 && !timedOut;
+            }
+            catch (Exception ex)
+            {
+                detail = Short(ex.GetType().Name + ": " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                Close(ssl, client);
+            }
+        }
+
+        private static byte[] ReadBody(
+            Stream stream,
+            bool chunked,
+            int contentLength,
+            int timeoutMs,
+            Stopwatch watch,
+            out bool timedOut)
+        {
+            timedOut = false;
+            const int Limit = 65536;
+            byte[] buffer = new byte[16384];
+            System.IO.MemoryStream collected = new System.IO.MemoryStream();
+            if (chunked)
+            {
+                while (collected.Length < Limit)
+                {
+                    string line = ReadLine(stream, 64, watch, timeoutMs);
+                    if (line.Length == 0)
+                    {
+                        break;
+                    }
+                    int semicolon = line.IndexOf(';');
+                    if (semicolon >= 0)
+                    {
+                        line = line.Substring(0, semicolon);
+                    }
+                    int size;
+                    if (!int.TryParse(line.Trim(), NumberStyles.HexNumber,
+                            CultureInfo.InvariantCulture, out size) || size <= 0)
+                    {
+                        break;
+                    }
+                    int remaining = size;
+                    while (remaining > 0)
+                    {
+                        int budget = timeoutMs - (int)watch.ElapsedMilliseconds;
+                        if (budget <= 0)
+                        {
+                            timedOut = true;
+                            break;
+                        }
+                        try
+                        {
+                            stream.ReadTimeout = budget;
+                        }
+                        catch (Exception)
+                        {
+                        }
+                        int read = stream.Read(
+                            buffer, 0, Math.Min(buffer.Length, remaining));
+                        if (read <= 0)
+                        {
+                            remaining = 0;
+                            break;
+                        }
+                        collected.Write(buffer, 0, read);
+                        remaining -= read;
+                    }
+                    ReadLine(stream, 8, watch, timeoutMs);
+                    if (timedOut)
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                int limit = contentLength > 0 && contentLength < Limit
+                    ? contentLength
+                    : Limit;
+                while (collected.Length < limit)
+                {
+                    int budget = timeoutMs - (int)watch.ElapsedMilliseconds;
+                    if (budget <= 0)
+                    {
+                        timedOut = true;
+                        break;
+                    }
+                    try
+                    {
+                        stream.ReadTimeout = budget;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    int read = stream.Read(
+                        buffer, 0,
+                        Math.Min(buffer.Length,
+                            limit - (int)collected.Length));
+                    if (read <= 0)
+                    {
+                        break;
+                    }
+                    collected.Write(buffer, 0, read);
+                }
+            }
+            return collected.ToArray();
+        }
+
         private static int ReadFixed(
             Stream stream,
             int length,

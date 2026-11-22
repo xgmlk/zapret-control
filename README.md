@@ -36,7 +36,15 @@ payload Flowseal и само приложение (`release.json`).
 - Определение активного интерфейса Wi-Fi/Ethernet и нативное обновление
   `--wf-iface` в `ImagePath` и активной стратегии `.bat`.
 - Вкладки: «Главная», «Служба», «Игры», «IPSet», «Фейки», «Обновления»,
-  «Диагностика», «Тесты».
+  «Диагностика», «Тесты», «Telegram».
+- Вкладка «Telegram»: локальный MTProto-прокси для Telegram Desktop. Клиент
+  подключается к `127.0.0.1`, трафик идёт к дата-центрам через WebSocket-TLS и
+  Cloudflare-фронты; прокси обходит блокировку по IP, которую не исправляет
+  zapret, и не требует прав администратора. Ссылка `tg://proxy` в один клик,
+  самопроверка соединения по шагам и тест моста (`resPQ` через прокси).
+- Покрытие доменов прокси стратегией zapret: управляемый блок в пользовательском
+  списке `list-general-user.txt` (файлы Flowseal не редактируются); служба
+  перезапускается после изменения списка.
 - Game Filter (disabled / TCP+UDP / TCP / UDP) с проверкой диапазонов.
 - IPSet loaded / none / any и обновление списка.
 - Замена активных фейков с SHA256 и бэкапом.
@@ -98,6 +106,7 @@ ZapretControl.Setup.exe --selftest
 %ProgramFiles%\ZapretControl\zapret\          payload Flowseal (bin, lists, utils, *.bat)
 %ProgramData%\ZapretControl\settings.json     настройки приложения
 %ProgramData%\ZapretControl\strategy-report.json результат последней проверки стратегий
+%ProgramData%\ZapretControl\tg-proxy.json      статус запущенного прокси Telegram (порт, секрет)
 %ProgramData%\ZapretControl\logs\             setup.log, update.log, sync-iface.log, ui-error.log
 %ProgramData%\ZapretControl\backups\          бэкапы фейков и hosts
 %ProgramData%\ZapretControl\staging\          загрузки обновлений
@@ -118,7 +127,8 @@ ZapretControl.Setup.exe --selftest
 | Фейки | активные Discord/GameFilter, список `.bin`, замена с бэкапом |
 | Обновления | проверка `release.json`, обновление и откат payload, обновление приложения, журнал |
 | Диагностика | проверки окружения, hosts, кэш Discord, копирование отчёта |
-| Тесты | единая проверка текущей стратегии (соединения, DPI-заморозка, YouTube), «Подобрать» и подробности проверки с главной |
+| Тесты | единая проверка текущей стратегии (соединения, DPI-заморозка, YouTube, Telegram), «Подобрать» и подробности проверки с главной |
+| Telegram | локальный MTProto-прокси: включение, порт, секрет, ссылка `tg://`, самопроверка, тест моста, автозапуск и покрытие zapret |
 
 Статус обновляется каждые 3 секунды; долгие операции идут в фоне и не
 блокируют окно.
@@ -243,6 +253,9 @@ ZapretControl.Cli.exe --test                      # полный подбор в
 ZapretControl.Cli.exe --test --gate=1             # эталон для проверки эквивалентности
 ZapretControl.Cli.exe --test=standard|dpi         # алиас проверки текущей стратегии
 ZapretControl.Cli.exe --youtube-probe
+ZapretControl.Cli.exe --tg-check
+ZapretControl.Cli.exe --tg-selftest
+ZapretControl.Cli.exe --tg-status | --tg-link
 ZapretControl.Cli.exe --update-check
 ZapretControl.Cli.exe --update-payload | --update-app | --rollback-payload
 ```
@@ -258,6 +271,14 @@ hosts, задачу и настройки, требуют прав админи�
 если медиа реально скачивается. Для DPI-заморозки нужен
 `%SystemRoot%\System32\curl.exe`; без него этап пропускается, а полная
 рекомендация невозможна.
+
+`--tg-check` печатает TCP-проверки пяти дата-центров Telegram, HTTPS
+`web.telegram.org` и DoH; `telegram=OK` требует всех дата-центров и веб-фронта.
+`--tg-selftest` поднимает прокси на временном loopback-порту, проверяет путь до
+Telegram и прогоняет `resPQ` через мост; менять систему и службу не требуется.
+`--tg-status` читает `%ProgramData%\ZapretControl\tg-proxy.json` от GUI и
+проверяет, что порт слушается; `--tg-link` печатает `tg://proxy` и создаёт
+постоянный секрет, если его ещё нет.
 
 Коды `--status`: 0 Running, 1 Stopped, 2 переходное/неизвестное, 3 не
 установлена, 4 нет прав, 64 неверные аргументы. `--iface`: 0 совпадает,
@@ -294,6 +315,14 @@ hosts, задачу и настройки, требуют прав админи�
   полные и частичные результаты; `HomeTab` показывает их в
   `StrategyResultsForm`, а `StrategyReportStore` сохраняет последний отчёт для
   кнопки «Последняя проверка».
+- `TgProtocol` / `TgAesCtr` / `TgWebSocket` / `TgMsgSplitter` / `TgFronts` /
+  `TgDoh` / `TgProxyService` — локальный MTProto→WebSocket прокси: обфусцированное
+  рукопожатие, AES-256-CTR, Cloudflare-фронты с кулдаунами, DoH и мост с
+  перешифровкой; `TgProxyService` пишет `tg-proxy.json` для CLI. Перенос
+  протокола из Flowseal/tg-ws-proxy и Zapret2UI (MIT).
+- `TelegramProbe` — информационная проверка Telegram в единой проверке;
+  `TelegramCoverage` — управляемый блок доменов прокси в
+  `lists\list-general-user.txt`.
 - `UpdateManifest` / `UpdateService` / `SignatureVerifier` — dual-update,
   `release.json`, SHA256, WinVerifyTrust, запуск Setup.
 - `SetupEngine` / `SetupForm` / `SetupProgram` — установка, обновление,
@@ -360,6 +389,13 @@ SHA256SUMS и отказ от неизвестных аргументов. `-Req
   неподписанный Setup принимается по SHA256, невалидная подпись отклоняется.
   Payload-обновления работают по SHA256.
 - `deploy.ps1` — вспомогательное средство разработки, а не установщик.
+- Прокси Telegram не создаёт путь из ничего: нужен хотя бы один доступный
+  маршрут до Telegram (прямой IP или Cloudflare-фронт). Если провайдер режет и
+  IP дата-центров, и TLS к фронтам по SNI, поможет только покрытие zapret
+  (вкладка «Telegram», галочка «Покрыть zapret») или другой внешний канал.
+- Покрытие zapret пишет управляемый блок в `lists\list-general-user.txt` и
+  перезапускает службу: нужны права администратора и установленная служба
+  `zapret`. Домены прокси попадают под профиль стратегии для TCP 80/443.
 
 ## Файлы
 
