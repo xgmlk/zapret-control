@@ -848,6 +848,11 @@ namespace ZapretControl
                 {
                     Log("[tg-proxy] прямой IP " + directAddress + " (SNI " +
                         domain + "): " + StageText(result));
+                    // Warm the balancer: the bridge self-test and the first
+                    // real connections should not pay the blocked direct path
+                    // again when a working front is available.
+                    _fronts.MarkBad(
+                        dc, TgFronts.DirectKey, DirectFailCooldownMs, false);
                 }
                 else
                 {
@@ -864,6 +869,12 @@ namespace ZapretControl
                     {
                         anyOk = true;
                         okVia = "прямой IP " + directAddress;
+                    }
+                    else
+                    {
+                        _fronts.MarkBad(
+                            dc, TgFronts.DirectKey,
+                            DirectFailCooldownMs, false);
                     }
                 }
             }
@@ -885,6 +896,8 @@ namespace ZapretControl
                 {
                     Log("[tg-proxy] фронт " + domain + ": " +
                         StageText(result));
+                    _fronts.MarkBad(
+                        dc, baseDomains[i], FrontFailCooldownMs, false);
                     continue;
                 }
                 bool relays = await TgProtocol.ProbeRelayAsync(
