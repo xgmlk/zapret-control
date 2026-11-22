@@ -1,0 +1,75 @@
+{
+    "schema":  1,
+    "seq":  2,
+    "generated_utc":  "2026-11-22T14:38:55Z",
+    "valid_until":  "2026-12-22T14:38:55Z",
+    "telegram":  {
+                     "web_host":  "web.telegram.org",
+                     "front_host":  "kws{dc}.{front}",
+                     "fronts":  [
+                                    "pclead.co.uk",
+                                    "offshor.co.uk",
+                                    "cakeisalie.co.uk",
+                                    "noskomnadzor.co.uk",
+                                    "lovetrue.co.uk",
+                                    "sorokdva.co.uk",
+                                    "pyatdesyatdva.co.uk",
+                                    "kartoshka.co.uk",
+                                    "sorokodin.co.uk",
+                                    "pyatdesyatodin.co.uk",
+                                    "notelega.co.uk",
+                                    "ebally.co.uk",
+                                    "nebally.co.uk",
+                                    "havegreatday.co.uk",
+                                    "pomogite.co.uk",
+                                    "fixtelega.co.uk",
+                                    "sadnews.co.uk",
+                                    "onedaychamp.co.uk",
+                                    "stopblocking.co.uk",
+                                    "nothingthere.co.uk"
+                                ],
+                     "dc":  [
+                                {
+                                    "id":  1,
+                                    "ip":  "149.154.175.53"
+                                },
+                                {
+                                    "id":  2,
+                                    "ip":  "149.154.167.51"
+                                },
+                                {
+                                    "id":  3,
+                                    "ip":  "149.154.175.100"
+                                },
+                                {
+                                    "id":  4,
+                                    "ip":  "149.154.167.91"
+                                },
+                                {
+                                    "id":  5,
+                                    "ip":  "91.108.56.130"
+                                }
+                            ],
+                     "direct_ws":  [
+                                       {
+                                           "dc":  2,
+                                           "ip":  "149.154.167.220",
+                                           "sni":  "kws2.web.telegram.org"
+                                       },
+                                       {
+                                           "dc":  4,
+                                           "ip":  "149.154.167.220",
+                                           "sni":  "kws4.web.telegram.org"
+                                       }
+                                   ]
+                 },
+    "doh":  [
+                "https://1.1.1.1/dns-query",
+                "https://8.8.8.8/resolve"
+            ],
+    "payload":  {
+                    "version":  "1.10.4",
+                    "url":  "https://github.com/Flowseal/zapret-discord-youtube/releases/download/1.10.4/zapret-discord-youtube-1.10.4.zip",
+                    "sha256":  "291AF673BD0238506F9548E0E94CA0ABF244000F4C9A06960544FB01C5F97B34"
+                }
+}
