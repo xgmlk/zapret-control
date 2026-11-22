@@ -84,6 +84,12 @@ jobs:
           $header = [System.IO.File]::ReadAllText(
               (Join-Path $env:GITHUB_WORKSPACE '.github\release-notes-header.md'),
               [System.Text.Encoding]::UTF8)
+          $sectionPath = Join-Path $env:GITHUB_WORKSPACE '.github\release-notes-section.md'
+          if (-not (Test-Path -LiteralPath $sectionPath)) {
+              throw "Missing section heading: $sectionPath"
+          }
+          $section = [System.IO.File]::ReadAllText(
+              $sectionPath, [System.Text.Encoding]::UTF8)
           $notes = [System.IO.File]::ReadAllText(
               $notesPath, [System.Text.Encoding]::UTF8)
           $previous = ''
@@ -95,7 +101,7 @@ jobs:
           } else {
               $compare = "https://github.com/$repo/releases/tag/$tag"
           }
-          $body = $header.TrimEnd() + "`r`n`r`n## Что изменилось`r`n`r`n" +
+          $body = $header.TrimEnd() + "`r`n`r`n" + $section.TrimEnd() + "`r`n`r`n" +
               $notes.TrimEnd() + "`r`n`r`n**Full Changelog**: $compare`r`n"
           $out = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           [System.IO.File]::WriteAllText($out, $body,

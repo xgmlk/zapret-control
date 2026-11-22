@@ -18,6 +18,8 @@
 Тело релиза собирается автоматически:
 
 - шапка из `.github/release-notes-header.md` дословно;
+- заголовок раздела из `.github/release-notes-section.md` (UTF-8, чтобы
+  PowerShell 5.1 не превратил кириллицу в мусор);
 - раздел «Что изменилось» из `.github/release-notes/v<version>.md`;
 - ссылка **Full Changelog** на сравнение с предыдущим тегом.
 
