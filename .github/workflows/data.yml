@@ -44,14 +44,11 @@ jobs:
               Write-Host 'No previous data.json; starting at seq 1.'
             }
           }
-          $arguments = @('-OutputDirectory', 'dist-data')
+          $arguments = @{ OutputDirectory = 'dist-data' }
           if (Test-Path -LiteralPath $previous) {
-            $arguments += @('-PreviousPath', $previous)
+            $arguments['PreviousPath'] = $previous
           }
           & .\tools\build-data.ps1 @arguments
-          if ($LASTEXITCODE -ne 0) {
-            throw "build-data.ps1 failed with exit code $LASTEXITCODE"
-          }
 
       - name: Publish release asset
         shell: powershell
