@@ -30,7 +30,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $previous = Join-Path $env:RUNNER_TEMP 'previous-data.json'
-          gh release download data --repo $env:GITHUB_REPOSITORY --pattern data.json --dir $env:RUNNER_TEMP --clobber 2>$null
+          $asset = 'https://github.com/' + $env:GITHUB_REPOSITORY + '/releases/download/data/data.json'
+          try {
+            Invoke-WebRequest -Uri $asset -OutFile $previous -UseBasicParsing -TimeoutSec 20
+          } catch {
+            Write-Host 'No release asset yet.'
+          }
           if (-not (Test-Path -LiteralPath $previous)) {
             $raw = 'https://raw.githubusercontent.com/' + $env:GITHUB_REPOSITORY + '/data/data.json'
             try {
@@ -53,8 +58,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view data --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
-          if ($LASTEXITCODE -ne 0) {
+          $headers = @{
+            Authorization = 'token ' + $env:GH_TOKEN
+            'User-Agent' = 'ZapretControl-data/1.0'
+            Accept = 'application/vnd.github+json'
+          }
+          $exists = $true
+          try {
+            Invoke-RestMethod -Uri ('https://api.github.com/repos/' + $env:GITHUB_REPOSITORY + '/releases/tags/data') -Headers $headers | Out-Null
+          } catch {
+            $exists = $false
+          }
+          $ErrorActionPreference = 'Continue'
+          if (-not $exists) {
             gh release create data --repo $env:GITHUB_REPOSITORY --prerelease --title "Data channel" --notes "Signed data channel for ZapretControl. Do not delete."
             if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }
           }
@@ -66,6 +82,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $ErrorActionPreference = 'Continue'
           $directory = Join-Path $env:RUNNER_TEMP 'data-branch'
           New-Item -ItemType Directory -Path $directory -Force | Out-Null
           git -C $directory init -q
