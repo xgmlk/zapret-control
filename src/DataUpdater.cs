@@ -49,7 +49,7 @@ namespace ZapretControl
                 string previousSource = DataStore.Source;
                 string lastError = null;
 
-                for (int source = 0; source < 2; source++)
+                for (int source = 0; source < 3; source++)
                 {
                     string dataUrl;
                     string signatureUrl;
@@ -60,11 +60,17 @@ namespace ZapretControl
                         signatureUrl = AppInfo.DataSignatureUrl;
                         label = "release";
                     }
-                    else
+                    else if (source == 1)
                     {
                         dataUrl = AppInfo.DataFallbackBase + FallbackFiles[0];
                         signatureUrl = AppInfo.DataFallbackBase + FallbackFiles[1];
                         label = "jsdelivr";
+                    }
+                    else
+                    {
+                        dataUrl = AppInfo.DataRawFallbackBase + FallbackFiles[0];
+                        signatureUrl = AppInfo.DataRawFallbackBase + FallbackFiles[1];
+                        label = "raw";
                     }
 
                     byte[] data;
