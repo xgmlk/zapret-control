@@ -1011,6 +1011,10 @@ namespace ZapretControl
                 Console.WriteLine("port=" + service.Port);
                 Console.WriteLine("secret=dd" + service.SecretHex);
                 Console.WriteLine("link=" + service.ProxyLink);
+                string coldBridge = service.BridgeSelfTestAsync(
+                    2, System.Threading.CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                Console.WriteLine("bridge_cold=" + coldBridge);
                 string upstream = service.SelfTestAsync(
                     System.Threading.CancellationToken.None)
                     .GetAwaiter().GetResult();

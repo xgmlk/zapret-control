@@ -39,8 +39,9 @@ namespace ZapretControl
         private const int FlakyDeathMs = 6000;
         private const int DirectFailCooldownMs = 60000;
         private const int FrontFailCooldownMs = 30000;
-        private const int ConnectTimeoutMs = 8000;
+        private const int ConnectTimeoutMs = 5000;
         private const int DohTimeoutMs = 4000;
+        private const int BridgeResponseMs = 15000;
 
         private enum BridgeOutcome
         {
@@ -170,6 +171,10 @@ namespace ZapretControl
             }
 
             _listener = listener;
+            // On networks that blackhole Telegram's direct addresses every
+            // fresh chat connection used to pay two full connect timeouts
+            // before reaching a front. One short TCP probe removes that.
+            MarkBlockedDirect();
             _cancellation = new CancellationTokenSource();
             _loggedFirstSuccess = false;
             IsRunning = true;
@@ -308,27 +313,32 @@ namespace ZapretControl
 
                 BridgeOutcome outcome = await BridgeAsync(
                     stream, socket, context, splitter,
-                    dcKey, id, decoded.IsMedia, ct).ConfigureAwait(false);
+                    dcKey, id, decoded.IsMedia,
+                    upstream.FrontId, ct).ConfigureAwait(false);
 
-                if (upstream.FrontId != null)
+                if (outcome == BridgeOutcome.DeadFront ||
+                    outcome == BridgeOutcome.FlakyDeath)
                 {
-                    if (outcome == BridgeOutcome.DeadFront)
+                    int cooldown = outcome == BridgeOutcome.DeadFront
+                        ? 120000
+                        : 30000;
+                    _loggedFirstSuccess = false;
+                    if (upstream.FrontId != null)
                     {
-                        _fronts.MarkBad(dcKey, upstream.FrontId,
-                            120000, decoded.IsMedia);
-                        _loggedFirstSuccess = false;
+                        _fronts.MarkBad(
+                            dcKey, upstream.FrontId, cooldown, decoded.IsMedia);
                         Log("[tg-proxy] DC" + dcKey + ": " +
                             upstream.FrontId +
-                            " не доводит трафик до Telegram — исключён на время");
+                            (outcome == BridgeOutcome.DeadFront
+                                ? " не доводит трафик до Telegram — исключён на время"
+                                : " рвёт соединение сразу — берётся другой фронт"));
                     }
-                    else if (outcome == BridgeOutcome.FlakyDeath)
+                    else
                     {
-                        _fronts.MarkBad(dcKey, upstream.FrontId,
-                            30000, decoded.IsMedia);
-                        _loggedFirstSuccess = false;
-                        Log("[tg-proxy] DC" + dcKey + ": " +
-                            upstream.FrontId +
-                            " рвёт соединение сразу — берётся другой фронт");
+                        _fronts.MarkBad(
+                            dcKey, TgFronts.DirectKey, cooldown, false);
+                        Log("[tg-proxy] DC" + dcKey +
+                            ": прямой IP не доводит трафик — исключён на время");
                     }
                 }
             }
@@ -581,6 +591,7 @@ namespace ZapretControl
             int dc,
             int id,
             bool isMedia,
+            string frontId,
             CancellationToken outerToken)
         {
             CancellationTokenSource linked =
@@ -679,6 +690,10 @@ namespace ZapretControl
                         if (Interlocked.Exchange(
                                 ref telegramResponded[0], 1) == 0)
                         {
+                            if (frontId != null)
+                            {
+                                _fronts.Prefer(dc, frontId, isMedia);
+                            }
                             LogDetail("[tg-proxy] #" + id + " DC" + dc +
                                 ": трафик пошёл");
                         }
@@ -801,6 +816,14 @@ namespace ZapretControl
                 lifetime < FlakyDeathMs)
             {
                 return BridgeOutcome.FlakyDeath;
+            }
+            // The upstream closed before Telegram ever answered and the client
+            // did not hang up: the path is dead even if the 10 s watchdog had
+            // not fired yet. Blacklist it so the next attempt rotates.
+            if (!relayed && Interlocked.CompareExchange(
+                    ref clientClosed[0], 0, 0) == 0)
+            {
+                return BridgeOutcome.DeadFront;
             }
             return BridgeOutcome.Ok;
         }
@@ -1008,12 +1031,14 @@ namespace ZapretControl
                 byte[] buffer = new byte[2048];
                 System.Diagnostics.Stopwatch watch =
                     System.Diagnostics.Stopwatch.StartNew();
-                while (plain.Count < 28 && watch.ElapsedMilliseconds < 9000)
+                while (plain.Count < 28 &&
+                       watch.ElapsedMilliseconds < BridgeResponseMs)
                 {
                     Task<int> read = stream.ReadAsync(buffer, 0, buffer.Length, ct);
                     if (!await TgAsync.WaitAsync(
-                            read, 9000 - (int)watch.ElapsedMilliseconds, ct)
-                            .ConfigureAwait(false))
+                            read,
+                            BridgeResponseMs - (int)watch.ElapsedMilliseconds,
+                            ct).ConfigureAwait(false))
                     {
                         break;
                     }
@@ -1068,6 +1093,52 @@ namespace ZapretControl
             if (log != null)
             {
                 log(message);
+            }
+        }
+
+        private void MarkBlockedDirect()
+        {
+            string address;
+            if (!TgProtocol.TryDirectTarget(2, out address))
+            {
+                return;
+            }
+            if (!ProbeTcp(address, 443, 1500))
+            {
+                _fronts.MarkBad(
+                    2, TgFronts.DirectKey, DirectFailCooldownMs, false);
+                _fronts.MarkBad(
+                    4, TgFronts.DirectKey, DirectFailCooldownMs, false);
+            }
+        }
+
+        private static bool ProbeTcp(string host, int port, int timeoutMs)
+        {
+            TcpClient client = new TcpClient();
+            try
+            {
+                IAsyncResult result = client.BeginConnect(
+                    host, port, null, null);
+                if (!result.AsyncWaitHandle.WaitOne(timeoutMs))
+                {
+                    return false;
+                }
+                client.EndConnect(result);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    client.Close();
+                }
+                catch (Exception)
+                {
+                }
             }
         }
 

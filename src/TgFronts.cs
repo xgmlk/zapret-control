@@ -158,6 +158,18 @@ namespace ZapretControl
             return IsBad(dc, Lane(isMedia), key);
         }
 
+        // A front that actually relayed Telegram traffic becomes the sticky
+        // chat front for this DC, so reconnects do not walk the blocked list
+        // again. Media keeps spreading over workers.
+        internal void Prefer(int dc, string baseDomain, bool isMedia)
+        {
+            if (isMedia || string.IsNullOrEmpty(baseDomain))
+            {
+                return;
+            }
+            _sticky[dc + "|a"] = baseDomain;
+        }
+
         internal void MarkBad(
             int dc, string baseDomain, int cooldownMs, bool isMedia)
         {
