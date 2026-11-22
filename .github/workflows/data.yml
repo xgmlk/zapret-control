@@ -83,6 +83,7 @@ jobs:
           $directory = Join-Path $env:RUNNER_TEMP 'data-branch'
           New-Item -ItemType Directory -Path $directory -Force | Out-Null
           git -C $directory init -q
+          git -C $directory config core.autocrlf false
           git -C $directory config user.name "github-actions[bot]"
           git -C $directory config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           $remote = 'https://x-access-token:' + $env:GITHUB_TOKEN + '@github.com/' + $env:GITHUB_REPOSITORY + '.git'
@@ -96,7 +97,11 @@ jobs:
           Copy-Item dist-data\data.json (Join-Path $directory 'data.json') -Force
           Copy-Item dist-data\data.json.sig (Join-Path $directory 'data.json.sig') -Force
           Copy-Item dist-data\data-report.txt (Join-Path $directory 'data-report.txt') -Force
-          git -C $directory add data.json data.json.sig data-report.txt
+          # Signatures cover exact bytes: Git must not rewrite LF/CRLF.
+          [System.IO.File]::WriteAllText(
+              (Join-Path $directory '.gitattributes'), "* -text`n",
+              (New-Object System.Text.UTF8Encoding($false)))
+          git -C $directory add .gitattributes data.json data.json.sig data-report.txt
           $seq = (Get-Content dist-data\data-report.txt | Where-Object { $_ -like 'seq=*' } | Select-Object -First 1)
           git -C $directory commit -q -m ("data: " + $seq)
           if ($LASTEXITCODE -ne 0) { throw 'git commit failed' }
