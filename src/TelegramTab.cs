@@ -304,7 +304,14 @@ namespace ZapretControl
             }
             try
             {
-                Process.Start(_proxy.ProxyLink);
+                // The GUI runs elevated. ShellExecute from an elevated process
+                // would start Telegram elevated too, so the URI is handed to
+                // the unelevated shell (explorer) instead.
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = "explorer.exe";
+                info.Arguments = "\"" + _proxy.ProxyLink + "\"";
+                info.UseShellExecute = true;
+                Process.Start(info);
             }
             catch (Exception ex)
             {
