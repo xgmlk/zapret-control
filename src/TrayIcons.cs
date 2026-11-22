@@ -25,7 +25,16 @@ namespace ZapretControl
                     graphics.Clear(Color.Transparent);
                     if (source != null)
                     {
-                        graphics.DrawIcon(source, new Rectangle(0, 0, Size, Size));
+                        try
+                        {
+                            graphics.DrawIcon(
+                                source, new Rectangle(0, 0, Size, Size));
+                        }
+                        catch (Exception)
+                        {
+                            // A corrupt/oversized frame must not remove the
+                            // whole icon: the badge dot below still works.
+                        }
                     }
                     using (SolidBrush fill = new SolidBrush(badge))
                     using (Pen border = new Pen(Color.White, 2f))

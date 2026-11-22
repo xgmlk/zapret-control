@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -94,9 +95,12 @@ namespace ZapretControl
             _startInTray.CheckedChanged += OnTraySettingsChanged;
             Theme.StyleCheck(_startInTray);
             settings.Controls.Add(_startInTray);
+            AddButton(settings, "Настройки трея", 650, 132, 182, 24,
+                OnTaskbarSettings);
             AddMutedLabel(settings,
-                "Полный выход — в меню значка в области уведомлений.",
-                20, 138, 500, 18);
+                "Полный выход — в меню значка. Windows 11 прячет новые значки " +
+                "в «Другие значки».",
+                20, 138, 610, 18);
 
             CardPanel logCard = AddCard("ЖУРНАЛ ОБНОВЛЕНИЙ", 0, 384, 852, 136);
             _log = AddTextBox(logCard, 20, 36, 812, 84, true);
@@ -631,6 +635,22 @@ namespace ZapretControl
                 }
             }
             return false;
+        }
+
+        private void OnTaskbarSettings(object sender, EventArgs e)
+        {
+            try
+            {
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = "ms-settings:taskbar";
+                info.UseShellExecute = true;
+                Process.Start(info);
+            }
+            catch (Exception)
+            {
+                ShowInfo("Параметры → Персонализация → Панель задач → " +
+                    "Другие значки.");
+            }
         }
 
         private void OnTraySettingsChanged(object sender, EventArgs e)

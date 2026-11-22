@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -103,7 +104,10 @@ namespace ZapretControl
             {
                 if (iconStream != null)
                 {
-                    _windowIcon = new Icon(iconStream, new Size(256, 256));
+                    // The .ico has no 256 px frame; requesting one produces a
+                    // broken Icon that throws in DrawIcon/ToBitmap. 32 px is
+                    // enough for both the window and the tray.
+                    _windowIcon = new Icon(iconStream, new Size(32, 32));
                     Icon = _windowIcon;
                 }
             }
@@ -791,6 +795,11 @@ namespace ZapretControl
                 check.Click += OnTrayCheck;
                 StyleTrayItem(check);
 
+                ToolStripMenuItem where = new ToolStripMenuItem(
+                    "Где значок в трее…");
+                where.Click += delegate { OpenTaskbarSettings(); };
+                StyleTrayItem(where);
+
                 ToolStripMenuItem exit = new ToolStripMenuItem("Выйти полностью");
                 exit.Click += delegate { ExitFromTray(); };
                 StyleTrayItem(exit);
@@ -800,12 +809,15 @@ namespace ZapretControl
                 _trayMenu.Items.Add(_trayProtectItem);
                 _trayMenu.Items.Add(_trayTelegramItem);
                 _trayMenu.Items.Add(check);
+                _trayMenu.Items.Add(where);
                 _trayMenu.Items.Add(new ToolStripSeparator());
                 _trayMenu.Items.Add(exit);
 
                 _tray = new NotifyIcon();
                 _tray.Icon = _trayOffIcon;
                 _tray.Text = "Zapret Control";
+                LogTray("create: on=" + (_trayOnIcon != null) +
+                    " off=" + (_trayOffIcon != null));
                 _tray.ContextMenuStrip = _trayMenu;
                 _tray.Visible = true;
                 _tray.DoubleClick += delegate { ShowFromTray(); };
@@ -826,12 +838,47 @@ namespace ZapretControl
                     }
                 };
                 UpdateTrayState();
+                LogTray("created visible=" + _tray.Visible +
+                    " text=" + _tray.Text);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // No notification area (server core, locked shell) must not
                 // prevent the main window from working.
+                LogTray("create failed: " + ex);
                 DisposeTray();
+            }
+        }
+
+        private static void LogTray(string message)
+        {
+            try
+            {
+                AppPaths.EnsureDirectory(AppPaths.LogDirectory);
+                File.AppendAllText(
+                    Path.Combine(AppPaths.LogDirectory, "tray.log"),
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + message +
+                    Environment.NewLine,
+                    new UTF8Encoding(true));
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void OpenTaskbarSettings()
+        {
+            try
+            {
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = "ms-settings:taskbar";
+                info.UseShellExecute = true;
+                Process.Start(info);
+            }
+            catch (Exception)
+            {
+                Notify("Настройки панели задач",
+                    "Параметры → Персонализация → Панель задач → Другие значки.");
             }
         }
 
@@ -931,14 +978,39 @@ namespace ZapretControl
             {
                 return;
             }
+            if (_tray == null || !_tray.Visible)
+            {
+                // Without a working notification icon hiding the window would
+                // leave no way back. Fall back to a normal minimised window.
+                WindowState = FormWindowState.Minimized;
+                LogTray("hide fallback: tray unavailable");
+                return;
+            }
             Hide();
             ShowInTaskbar = false;
-            if (!_trayHintShown && _tray != null && Settings.Load().TrayBalloons)
+            LogTray("hidden, proxy=" + ProxyRunning());
+            if (!_trayHintShown)
             {
                 _trayHintShown = true;
-                Notify("Zapret Control свёрнут в трей",
-                    "Программа продолжает работать. Полный выход — в меню значка.");
+                // One-time onboarding hint even when ordinary balloons are
+                // off: Windows 11 hides new icons in the overflow area.
+                try
+                {
+                    _tray.ShowBalloonTip(6000, "Zapret Control свёрнут в трей",
+                        "Прокси продолжает работать. Если значка не видно, " +
+                        "включите его в «Другие значки» панели задач.",
+                        ToolTipIcon.Info);
+                }
+                catch (Exception)
+                {
+                }
             }
+        }
+
+        private bool ProxyRunning()
+        {
+            TelegramTab telegram = _tabs[8] as TelegramTab;
+            return telegram != null && telegram.ProxyIsRunning;
         }
 
         private void ExitFromTray()
