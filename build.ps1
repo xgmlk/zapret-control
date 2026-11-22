@@ -238,7 +238,7 @@ if ($Sign) {
     }
 }
 else {
-    Write-Host 'Signing: skipped (use -Sign and a code-signing certificate before distribution; T2).'
+    Write-Host 'Signing: skipped (use -Sign before distribution).'
 }
 
 Write-Host ("Version: {0}" -f $Version)

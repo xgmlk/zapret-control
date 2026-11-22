@@ -1007,6 +1007,13 @@ namespace ZapretControl
             Console.WriteLine("seq=" + result.Seq);
             Console.WriteLine("source=" + result.Source);
             Console.WriteLine("fronts=" + result.Fronts);
+            Console.WriteLine("cache=" + (result.CacheSaved ? "saved" : "not saved"));
+            if (!result.CacheSaved)
+            {
+                Console.Error.WriteLine(
+                    "warning: cache not saved; run as administrator to persist data");
+                return 1;
+            }
             return 0;
         }
 

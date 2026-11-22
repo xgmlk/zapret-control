@@ -12,8 +12,9 @@ zapret (дистрибутив Flowseal `zapret-discord-youtube`): служба,
 
 Публичная раздача — `ZapretControl.Setup.exe` из GitHub Releases. Установщик
 сам скачивает совместимый payload Flowseal, проверяет SHA256, создаёт службу,
-задачу синхронизации интерфейса и ярлыки. Обновления приходят по двум каналам:
-payload Flowseal и само приложение (`release.json`).
+задачу синхронизации интерфейса и ярлыки. Обновления приходят по трём каналам:
+подписанный `data.json` (фронты Telegram, адреса дата-центров, DoH и версия
+payload), сам payload Flowseal и приложение (`release.json`).
 
 ## Возможности
 
@@ -50,6 +51,15 @@ payload Flowseal и само приложение (`release.json`).
 - Включение и выключение прокси Telegram — на главной; настройки, журнал и
   проверки — на вкладке «Telegram». После включения Telegram открывается сам по
   ссылке `tg://proxy` и показывает окно подключения (автозапуск окно не открывает).
+- Сворачивание в трей: крестик, красный и жёлтый светофоры скрывают окно;
+  защита продолжает работать. Меню значка открывает окно, переключает защиту и
+  прокси Telegram, проверяет обновления и выполняет полный выход. Настройки
+  «Закрывать окно в трей», уведомления и «Стартовать в трее» — на вкладке
+  «Обновления».
+- Автообновление данных Telegram: подписанный `data.json` с фронтами,
+  адресами дата-центров, DoH и версией payload Flowseal; проверка при старте и
+  раз в 6 часов, кэш и встроенный снимок без сети. `--data-status` и
+  `--data-update` в CLI.
 - Клик по иконке в панели задач сворачивает и восстанавливает окно.
 - Game Filter (disabled / TCP+UDP / TCP / UDP) с проверкой диапазонов.
 - IPSet loaded / none / any и обновление списка.
@@ -59,7 +69,8 @@ payload Flowseal и само приложение (`release.json`).
   VPN, DoH, интерфейс, задача) и нативная единая проверка: 12 хостов по
   HTTP/1.1/TLS 1.2/TLS 1.3, DPI-заморозка 16–20 КБ через `curl.exe`, страница
   и плеер YouTube, два ролика по три фрагмента `googlevideo`.
-- Два канала обновлений: Flowseal payload и `ZapretControl.Setup.exe`.
+- Три канала обновлений: подписанный `data.json`, Flowseal payload и
+  `ZapretControl.Setup.exe`.
   Манифест `release.json`, SHA256, Authenticode, staging/backup/rollback,
   сохранение пользовательских списков, Game Filter и активных фейков.
 - CLI для скриптов, задач и smoke-тестов.
@@ -264,6 +275,7 @@ ZapretControl.Cli.exe --tg-check
 ZapretControl.Cli.exe --tg-selftest
 ZapretControl.Cli.exe --tg-status | --tg-link
 ZapretControl.Cli.exe --tg-bridge
+ZapretControl.Cli.exe --data-status | --data-update
 ZapretControl.Cli.exe --update-check
 ZapretControl.Cli.exe --update-payload | --update-app | --rollback-payload
 ```
@@ -289,6 +301,12 @@ Telegram и прогоняет `resPQ` через мост; менять сис�
 печатает `tg://proxy` и создаёт постоянный секрет, если его ещё нет;
 `--tg-bridge` прогоняет `req_pq` через уже запущенный прокси и печатает
 `bridge=МОСТ OK`, если `resPQ` вернулся невредимым.
+
+`--data-status` печатает активный набор данных (`seq`, источник, срок годности,
+число фронтов, версию payload). `--data-update` скачивает подписанный
+`data.json`, проверяет подпись ECDSA, `seq` и срок, обновляет кэш в
+`%ProgramData%\ZapretControl\data` и печатает `ok=`, `seq=`, `source=`,
+`cache=`. Для записи кэша нужны права администратора.
 
 Коды `--status`: 0 Running, 1 Stopped, 2 переходное/неизвестное, 3 не
 установлена, 4 нет прав, 64 неверные аргументы. `--iface`: 0 совпадает,

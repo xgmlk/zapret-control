@@ -775,14 +775,19 @@ namespace ZapretControl
                         // to exit through the named event first; an older build
                         // without the listener falls back to the window close.
                         bool asked = TrayIntegration.RequestExit();
-                        if (asked && process.WaitForExit(15000))
+                        if (asked)
                         {
+                            if (!process.WaitForExit(15000))
+                            {
+                                throw new InvalidOperationException(
+                                    "Приложение не закрылось за 15 секунд: " +
+                                    "дождитесь окончания операции и повторите.");
+                            }
                             continue;
                         }
-                        if (!asked || !process.HasExited)
-                        {
-                            process.CloseMainWindow();
-                        }
+                        // Older build without the tray listener: closing the
+                        // main window is the only handshake it understands.
+                        process.CloseMainWindow();
                         if (!process.WaitForExit(5000))
                         {
                             process.Kill();

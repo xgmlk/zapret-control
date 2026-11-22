@@ -10,6 +10,7 @@ namespace ZapretControl
         internal bool Ok;
         internal bool Changed;
         internal bool Busy;
+        internal bool CacheSaved;
         internal long Seq;
         internal int Fronts;
         internal string Source;
@@ -114,11 +115,16 @@ namespace ZapretControl
                         previousSeq == 0;
                     if (changed)
                     {
-                        if (!DataStore.SaveCache(data, signature, label))
+                        result.CacheSaved = DataStore.SaveCache(data, signature, label);
+                        if (!result.CacheSaved)
                         {
                             Log("cache write failed source=" + label);
                         }
                         DataStore.Apply(document, label);
+                    }
+                    else
+                    {
+                        result.CacheSaved = true;
                     }
                     result.Ok = true;
                     result.Changed = changed;

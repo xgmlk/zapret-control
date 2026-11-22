@@ -56,7 +56,7 @@ jobs:
         if: steps.signing.outputs.signed == 'false'
         shell: powershell
         run: |
-          Write-Warning 'CODE_SIGN_PFX_BASE64 is not configured; the release will be a prerelease (T2).'
+          Write-Warning 'CODE_SIGN_PFX_BASE64 is not configured; the release will be a prerelease.'
           .\build.ps1 -Version '${{ steps.version.outputs.version }}'
           if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed: $LASTEXITCODE" }
 
@@ -117,7 +117,8 @@ jobs:
           $files = @(
             'dist\ZapretControl.Setup.exe',
             'dist\release.json',
-            'dist\SHA256SUMS.txt'
+            'dist\SHA256SUMS.txt',
+            'THIRD-PARTY-NOTICES.md'
           )
           $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           $arguments = @('release', 'create', $tag) + $files + @(
