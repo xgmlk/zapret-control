@@ -37,7 +37,7 @@ namespace ZapretControl
         private const int IdleTimeoutMs = 360000;
         private const int FirstResponseMs = 10000;
         private const int FlakyDeathMs = 6000;
-        private const int DirectFailCooldownMs = 60000;
+        private const int DirectFailCooldownMs = 600000;
         private const int FrontFailCooldownMs = 30000;
         private const int ConnectTimeoutMs = 5000;
         private const int DohTimeoutMs = 4000;
