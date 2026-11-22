@@ -102,7 +102,7 @@ $common = Select-Sources @(
 
 $guiSources = $common + (Select-Sources @(
     'Program', 'MainForm', 'Theme', 'ThemedControls', 'ToggleSwitch',
-    'TrafficLightButton', 'UiDrawing',
+    'TrafficLightButton', 'UiDrawing', 'ShellLauncher',
     'HomeTab', 'ServiceTab', 'GameTab', 'IpsetTab', 'FakesTab', 'UpdatesTab',
     'DiagnosticsTab', 'TestsTab', 'TelegramTab', 'TabView', 'HelpForm',
     'StrategyResultsForm', 'FirstRunForm'

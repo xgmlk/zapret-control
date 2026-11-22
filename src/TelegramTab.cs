@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -11,6 +12,7 @@ namespace ZapretControl
 {
     public sealed class TelegramTab : TabView
     {
+        private static readonly object LogFileSync = new object();
         private readonly TgProxyService _proxy = new TgProxyService();
         private TextBox _port;
         private TextBox _secret;
@@ -304,14 +306,17 @@ namespace ZapretControl
             }
             try
             {
-                // The GUI runs elevated. ShellExecute from an elevated process
-                // would start Telegram elevated too, so the URI is handed to
-                // the unelevated shell (explorer) instead.
-                ProcessStartInfo info = new ProcessStartInfo();
-                info.FileName = "explorer.exe";
-                info.Arguments = "\"" + _proxy.ProxyLink + "\"";
-                info.UseShellExecute = true;
-                Process.Start(info);
+                // The GUI runs elevated; the shell token keeps Telegram in the
+                // normal user session and carries the tg:// link reliably.
+                if (ShellLauncher.Open(_proxy.ProxyLink))
+                {
+                    AppendLog("Telegram открыт со ссылкой на прокси");
+                    return;
+                }
+                AppendLog("не удалось открыть через токен оболочки — " +
+                    "запускаю ссылку напрямую");
+                Process.Start(_proxy.ProxyLink);
+                AppendLog("Telegram открыт со ссылкой на прокси");
             }
             catch (Exception ex)
             {
@@ -465,6 +470,28 @@ namespace ZapretControl
                     _journal.Clear();
                 }
                 _journal.AppendText(line);
+                try
+                {
+                    AppPaths.EnsureDirectory(AppPaths.LogDirectory);
+                    string path = Path.Combine(
+                        AppPaths.LogDirectory, "tg-proxy.log");
+                    lock (LogFileSync)
+                    {
+                        FileInfo file = new FileInfo(path);
+                        if (file.Exists && file.Length > 1024 * 1024)
+                        {
+                            File.Delete(path);
+                        }
+                        File.AppendAllText(
+                            path,
+                            DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
+                            "  " + message + Environment.NewLine,
+                            new UTF8Encoding(false));
+                    }
+                }
+                catch (Exception)
+                {
+                }
             }
             catch (Exception)
             {
