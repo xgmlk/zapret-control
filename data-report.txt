@@ -1,8 +1,8 @@
-seq=2
+seq=3
 fronts=20
 fronts_source=https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt
 dc=5
 payload=1.10.4
 bytes=3525
-generated_utc=2026-11-22T14:38:55Z
-valid_until=2026-12-22T14:38:55Z
+generated_utc=2026-11-22T14:55:20Z
+valid_until=2026-12-22T14:55:20Z
