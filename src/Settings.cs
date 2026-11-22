@@ -27,6 +27,7 @@ namespace ZapretControl
         public bool StartInTray { get; set; }
         public bool TrayBalloons { get; set; }
         public string LastCoverageRestartUtc { get; set; }
+        public bool CoverageRestartPending { get; set; }
 
         public SettingsData()
         {
@@ -50,6 +51,7 @@ namespace ZapretControl
             StartInTray = false;
             TrayBalloons = true;
             LastCoverageRestartUtc = string.Empty;
+            CoverageRestartPending = false;
         }
     }
 

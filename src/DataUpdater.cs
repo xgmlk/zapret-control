@@ -200,13 +200,24 @@ namespace ZapretControl
                 {
                     return "ошибка: " + (coverage.Error ?? "неизвестно");
                 }
-                if (!coverage.Changed)
+                if (coverage.Changed)
+                {
+                    settings.CoverageRestartPending = true;
+                    Settings.Save();
+                }
+                if (!coverage.Changed && !settings.CoverageRestartPending)
                 {
                     return "без изменений";
                 }
                 if (ZapretService.GetStatus().State != ZapretState.Running)
                 {
-                    return "список обновлён, служба остановлена";
+                    // A stopped service reads the list when it starts, so no
+                    // deferred restart is needed.
+                    settings.CoverageRestartPending = false;
+                    Settings.Save();
+                    return coverage.Changed
+                        ? "список обновлён, служба остановлена"
+                        : "без изменений";
                 }
                 DateTime last;
                 if (DataValidation.TryParseUtc(
@@ -225,6 +236,7 @@ namespace ZapretControl
                     {
                         ZapretService.RestartIfRunning();
                         settings.LastCoverageRestartUtc = DateTime.UtcNow.ToString("o");
+                        settings.CoverageRestartPending = false;
                         Settings.Save();
                         Log("coverage restarted service, fronts=" +
                             DataStore.Fronts.Length);
