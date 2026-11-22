@@ -37,7 +37,7 @@ jobs:
             Write-Host 'No release asset yet.'
           }
           if (-not (Test-Path -LiteralPath $previous)) {
-            $raw = 'https://raw.githubusercontent.com/' + $env:GITHUB_REPOSITORY + '/data/data.json'
+            $raw = 'https://raw.githubusercontent.com/' + $env:GITHUB_REPOSITORY + '/data-mirror/data.json'
             try {
               Invoke-WebRequest -Uri $raw -OutFile $previous -UseBasicParsing -TimeoutSec 20
             } catch {
@@ -87,11 +87,11 @@ jobs:
           git -C $directory config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           $remote = 'https://x-access-token:' + $env:GITHUB_TOKEN + '@github.com/' + $env:GITHUB_REPOSITORY + '.git'
           git -C $directory remote add origin $remote
-          git -C $directory fetch --depth=1 origin data 2>$null
+          git -C $directory fetch --depth=1 origin refs/heads/data-mirror 2>$null
           if ($LASTEXITCODE -eq 0) {
-            git -C $directory checkout -q -B data FETCH_HEAD
+            git -C $directory checkout -q -B data-mirror FETCH_HEAD
           } else {
-            git -C $directory checkout -q --orphan data
+            git -C $directory checkout -q --orphan data-mirror
           }
           Copy-Item dist-data\data.json (Join-Path $directory 'data.json') -Force
           Copy-Item dist-data\data.json.sig (Join-Path $directory 'data.json.sig') -Force
@@ -100,5 +100,5 @@ jobs:
           $seq = (Get-Content dist-data\data-report.txt | Where-Object { $_ -like 'seq=*' } | Select-Object -First 1)
           git -C $directory commit -q -m ("data: " + $seq)
           if ($LASTEXITCODE -ne 0) { throw 'git commit failed' }
-          git -C $directory push origin HEAD:data --force
+          git -C $directory push origin HEAD:refs/heads/data-mirror --force
           if ($LASTEXITCODE -ne 0) { throw 'git push failed' }

@@ -30,7 +30,7 @@ namespace ZapretControl
         public const string DataSignatureUrl =
             "https://github.com/xgmlk/zapret-control/releases/download/data/data.json.sig";
         public const string DataFallbackBase =
-            "https://cdn.jsdelivr.net/gh/xgmlk/zapret-control@data/";
+            "https://cdn.jsdelivr.net/gh/xgmlk/zapret-control@data-mirror/";
         public const string DataPublicKeyBlob =
             "RUNTMSAAAAAbs9A2YtWuLTn118SA/X3gVko1CeaFLrkPAu+cHXlk9ZXzCu+R5qCaXN9jtrY1p9S+cOaWzPmaBl53zRtLhmnd";
         public const string DataPublicKeyBlobNext = "";
