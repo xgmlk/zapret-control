@@ -93,7 +93,7 @@ jobs:
           $notes = [System.IO.File]::ReadAllText(
               $notesPath, [System.Text.Encoding]::UTF8)
           $previous = ''
-          $describe = & git describe --tags --abbrev=0 ($tag + '^') 2>$null
+          $describe = & git describe --tags --abbrev=0 --match 'v*' ($tag + '^') 2>$null
           if ($LASTEXITCODE -eq 0 -and $describe) { $previous = $describe.Trim() }
           $repo = '${{ github.repository }}'
           if ($previous) {
