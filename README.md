@@ -262,6 +262,7 @@ ZapretControl.Cli.exe --youtube-probe
 ZapretControl.Cli.exe --tg-check
 ZapretControl.Cli.exe --tg-selftest
 ZapretControl.Cli.exe --tg-status | --tg-link
+ZapretControl.Cli.exe --tg-bridge
 ZapretControl.Cli.exe --update-check
 ZapretControl.Cli.exe --update-payload | --update-app | --rollback-payload
 ```
@@ -284,7 +285,9 @@ hosts, задачу и настройки, требуют прав админи�
 Telegram и прогоняет `resPQ` через мост; менять систему и службу не требуется.
 `--tg-status` читает статус от GUI (`proxy\tg-proxy-<pid>.json`, старый
 `tg-proxy.json` — как резерв) и проверяет, что порт слушается; `--tg-link`
-печатает `tg://proxy` и создаёт постоянный секрет, если его ещё нет.
+печатает `tg://proxy` и создаёт постоянный секрет, если его ещё нет;
+`--tg-bridge` прогоняет `req_pq` через уже запущенный прокси и печатает
+`bridge=МОСТ OK`, если `resPQ` вернулся невредимым.
 
 Коды `--status`: 0 Running, 1 Stopped, 2 переходное/неизвестное, 3 не
 установлена, 4 нет прав, 64 неверные аргументы. `--iface`: 0 совпадает,

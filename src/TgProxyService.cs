@@ -940,23 +940,34 @@ namespace ZapretControl
             {
                 return "тест моста: прокси не запущен";
             }
-            Log("[tg-proxy] ── тест моста, полоса «" +
+            return await ProbeBridgeAsync(
+                Host, Port, _secret, dcIndex, ct, Log).ConfigureAwait(false);
+        }
+
+        // Same loopback probe against any local proxy: used by the GUI test
+        // and by `--tg-bridge`, which verifies the proxy already running in
+        // another process without touching Telegram Desktop.
+        internal static async Task<string> ProbeBridgeAsync(
+            string host, int port, byte[] secret, int dcIndex,
+            CancellationToken ct, Action<string> log)
+        {
+            LogTo(log, "[tg-proxy] ── тест моста, полоса «" +
                 LaneName(dcIndex < 0) + "» (loopback-клиент через мост) ──");
             TcpClient client = new TcpClient();
             try
             {
                 client.NoDelay = true;
-                Task connect = client.ConnectAsync(Host, Port);
+                Task connect = client.ConnectAsync(host, port);
                 if (!await TgAsync.WaitAsync(
                         connect, 5000, ct).ConfigureAwait(false))
                 {
-                    return "тест моста: нет подключения к 127.0.0.1:" + Port;
+                    return "тест моста: нет подключения к " + host + ":" + port;
                 }
                 NetworkStream stream = client.GetStream();
 
                 byte[] protoTag = TgProtocol.ProtoTagSecure;
                 byte[] init = TgProtocol.GenerateClientInit(
-                    protoTag, dcIndex, _secret);
+                    protoTag, dcIndex, secret);
                 byte[] prekeyIv = TgProtocol.Slice(
                     init, TgProtocol.SkipLen, TgProtocol.PrekeyLen +
                     TgProtocol.IvLen);
@@ -964,13 +975,13 @@ namespace ZapretControl
                 TgAesCtr send = new TgAesCtr(
                     TgProtocol.DeriveKey(
                         TgProtocol.Slice(prekeyIv, 0, TgProtocol.PrekeyLen),
-                        _secret),
+                        secret),
                     TgProtocol.Slice(
                         prekeyIv, TgProtocol.PrekeyLen, TgProtocol.IvLen));
                 TgAesCtr receive = new TgAesCtr(
                     TgProtocol.DeriveKey(
                         TgProtocol.Slice(reversed, 0, TgProtocol.PrekeyLen),
-                        _secret),
+                        secret),
                     TgProtocol.Slice(
                         reversed, TgProtocol.PrekeyLen, TgProtocol.IvLen));
                 send.Update(new byte[TgProtocol.HandshakeLen]);
@@ -1033,7 +1044,7 @@ namespace ZapretControl
                           constructor.ToString("x8") +
                           " — баг в мосте (не сеть!)";
                 }
-                Log("[tg-proxy] " + verdict);
+                LogTo(log, "[tg-proxy] " + verdict);
                 return verdict;
             }
             catch (Exception ex)
@@ -1049,6 +1060,14 @@ namespace ZapretControl
                 catch (Exception)
                 {
                 }
+            }
+        }
+
+        private static void LogTo(Action<string> log, string message)
+        {
+            if (log != null)
+            {
+                log(message);
             }
         }
 

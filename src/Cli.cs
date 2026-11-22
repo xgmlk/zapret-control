@@ -21,7 +21,7 @@ namespace ZapretControl
             "--hosts-check|--hosts-apply|--clear-discord-cache|--diagnostics|" +
             "--test[=<standard|dpi>] [--gate=1..16]|--youtube-probe|--update-check|" +
             "--update-payload|--update-app|--rollback-payload|--tg-check|" +
-            "--tg-selftest|--tg-status|--tg-link";
+            "--tg-selftest|--tg-status|--tg-link|--tg-bridge";
 
         private static int Main(string[] args)
         {
@@ -183,6 +183,10 @@ namespace ZapretControl
                 if (command == "--tg-link")
                 {
                     return PrintTelegramLink();
+                }
+                if (command == "--tg-bridge")
+                {
+                    return BridgeTelegramProxy();
                 }
                 if (command == "--update-check")
                 {
@@ -1038,9 +1042,46 @@ namespace ZapretControl
             return status.Running ? 0 : 1;
         }
 
-        private static int PrintTelegramLink()
+        private static int BridgeTelegramProxy()
         {
-            SettingsData settings = Settings.Load();
+            TgProxyStatusInfo status = TgProxyService.ReadStatusFile();
+            if (!status.Running)
+            {
+                Console.Error.WriteLine("error=proxy_not_running");
+                return 4;
+            }
+            string secret = status.Secret;
+            if (string.IsNullOrEmpty(secret))
+            {
+                Console.Error.WriteLine("error=secret_missing");
+                return 4;
+            }
+            if (secret.StartsWith("dd", StringComparison.Ordinal))
+            {
+                secret = secret.Substring(2);
+            }
+            byte[] key = TgProtocol.FromHex(secret);
+            if (key == null || key.Length != 16)
+            {
+                Console.Error.WriteLine("error=invalid_secret");
+                return 4;
+            }
+            Console.WriteLine("port=" + status.Port);
+            string verdict = TgProxyService.ProbeBridgeAsync(
+                "127.0.0.1", status.Port, key, 2,
+                System.Threading.CancellationToken.None,
+                delegate(string message)
+                {
+                    Console.WriteLine("log=" + message);
+                }).GetAwaiter().GetResult();
+            Console.WriteLine("bridge=" + verdict);
+            return verdict.StartsWith("МОСТ OK", StringComparison.Ordinal)
+                ? 0
+                : 1;
+        }
+
+        private static int PrintTelegramLink()
+        {            SettingsData settings = Settings.Load();
             TgProxyStatusInfo status = TgProxyService.ReadStatusFile();
             int port = status.Port > 0 ? status.Port : settings.TgProxyPort;
             string secret = status.Secret;
