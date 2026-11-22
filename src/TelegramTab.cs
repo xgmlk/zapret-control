@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace ZapretControl
 {
@@ -115,7 +116,7 @@ namespace ZapretControl
             {
                 return;
             }
-            StartProxy();
+            StartProxy(false);
         }
 
         public void StopProxy()
@@ -161,7 +162,7 @@ namespace ZapretControl
             }
             else
             {
-                StartProxy();
+                StartProxy(true);
             }
         }
 
@@ -183,11 +184,15 @@ namespace ZapretControl
             }
             else
             {
-                StartProxy();
+                StartProxy(true);
             }
         }
 
-        private void StartProxy()
+        // Starts the listener. openTelegram is true only for a user-initiated
+        // toggle (home or this tab), not for autostart or a port restart: the
+        // request is that enabling the proxy immediately shows Telegram's
+        // proxy-connection dialog.
+        private void StartProxy(bool openTelegram)
         {
             SettingsData settings = Settings.Load();
             ApplyCoverage(settings.TgProxyZapret);
@@ -195,6 +200,10 @@ namespace ZapretControl
             {
                 UpdateState();
                 return;
+            }
+            if (openTelegram)
+            {
+                OpenInTelegram(true);
             }
         }
 
@@ -222,7 +231,7 @@ namespace ZapretControl
             _proxy.Configure(port, settings.TgProxySecret);
             if (wasRunning)
             {
-                StartProxy();
+                StartProxy(false);
             }
             UpdateState();
         }
@@ -278,6 +287,21 @@ namespace ZapretControl
 
         private void OnOpen(object sender, EventArgs e)
         {
+            OpenInTelegram(false);
+        }
+
+        private void OpenInTelegram(bool automatic)
+        {
+            if (automatic && !IsTelegramLinkRegistered())
+            {
+                AppendLog("Telegram не найден — включите прокси вручную по " +
+                    "ссылке на вкладке «Telegram»");
+                return;
+            }
+            if (_proxy.IsRunning)
+            {
+                AppendLog("открываю Telegram со ссылкой на прокси");
+            }
             try
             {
                 Process.Start(_proxy.ProxyLink);
@@ -285,8 +309,26 @@ namespace ZapretControl
             catch (Exception ex)
             {
                 AppendLog("не удалось открыть Telegram: " + ex.Message);
-                ShowInfo("Ссылка скопирована. Откройте её в Telegram вручную.");
-                CopyLink();
+                if (!automatic)
+                {
+                    ShowInfo("Ссылка скопирована. Откройте её в Telegram вручную.");
+                    CopyLink();
+                }
+            }
+        }
+
+        private static bool IsTelegramLinkRegistered()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.ClassesRoot.OpenSubKey("tg", false))
+                {
+                    return key != null;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
