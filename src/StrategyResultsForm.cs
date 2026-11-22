@@ -37,8 +37,8 @@ namespace ZapretControl
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
-            BackColor = Color.FromArgb(247, 246, 243);
-            ForeColor = Color.FromArgb(44, 44, 46);
+            BackColor = Theme.Current.WindowBg;
+            ForeColor = Theme.Current.TextPrimary;
             Font = new Font("Segoe UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi;
 
@@ -56,8 +56,8 @@ namespace ZapretControl
             header.Font = new Font("Segoe UI", 8.5F);
             header.Text = BuildHeader();
             header.ForeColor = _report.HasRecommendation
-                ? Color.FromArgb(31, 122, 51)
-                : Color.FromArgb(150, 112, 28);
+                ? Theme.Current.Success
+                : Theme.Current.Warning;
             Controls.Add(header);
 
             Label checkedAt = new Label();
@@ -70,7 +70,9 @@ namespace ZapretControl
                 (string.IsNullOrEmpty(_report.CheckedAtDisplay)
                     ? "время неизвестно"
                     : _report.CheckedAtDisplay) + elapsed;
-            checkedAt.ForeColor = Color.FromArgb(110, 110, 115);
+            checkedAt.ForeColor = Theme.Current.TextSecondary;
+            checkedAt.BackColor = Color.Transparent;
+            checkedAt.Tag = "muted";
             checkedAt.Font = new Font("Segoe UI", 8.25F);
             Controls.Add(checkedAt);
 
@@ -96,11 +98,14 @@ namespace ZapretControl
             _list.Columns.Add("Итог", 140);
             _list.SelectedIndexChanged += OnSelectionChanged;
             _list.DoubleClick += OnDoubleClick;
+            Theme.StyleList(_list);
             Controls.Add(_list);
 
             Label detailCaption = new Label();
             detailCaption.Text = "Подробности:";
-            detailCaption.ForeColor = Color.FromArgb(110, 110, 115);
+            detailCaption.ForeColor = Theme.Current.TextSecondary;
+            detailCaption.BackColor = Color.Transparent;
+            detailCaption.Tag = "muted";
             detailCaption.SetBounds(20, 428, 200, 18);
             Controls.Add(detailCaption);
 
@@ -109,18 +114,20 @@ namespace ZapretControl
             _detail.Multiline = true;
             _detail.ReadOnly = true;
             _detail.ScrollBars = ScrollBars.Vertical;
-            _detail.BackColor = Color.FromArgb(252, 251, 248);
+            _detail.BackColor = Theme.Current.InputReadOnlyBg;
+            _detail.ForeColor = Theme.Current.TextPrimary;
             _detail.BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(_detail);
 
-            _apply = new Button();
+            _apply = new ThemedButton();
             _apply.Text = "Применить";
             _apply.SetBounds(668, 530, 100, 30);
             _apply.Click += OnApply;
             _apply.Visible = !readOnly;
+            Theme.StyleButton(_apply);
             Controls.Add(_apply);
 
-            Button close = new Button();
+            Button close = new ThemedButton();
             close.Text = "Закрыть";
             close.SetBounds(780, 530, 100, 30);
             close.Click += delegate
@@ -129,10 +136,12 @@ namespace ZapretControl
                 DialogResult = DialogResult.Cancel;
                 Close();
             };
+            Theme.StyleButton(close);
             Controls.Add(close);
 
             AcceptButton = readOnly ? close : _apply;
             CancelButton = close;
+            Theme.Apply(this);
             Populate();
         }
 
@@ -237,15 +246,16 @@ namespace ZapretControl
                     item.SubItems.Add(result.SummaryText);
                     item.Tag = result;
                     item.ForeColor = result.Ok
-                        ? Color.FromArgb(31, 122, 51)
+                        ? Theme.Current.Success
                         : (result.PartiallyOk
-                            ? Color.FromArgb(150, 112, 28)
-                            : Color.FromArgb(168, 58, 51));
+                            ? Theme.Current.Warning
+                            : Theme.Current.Danger);
                     if (result.Ok && _report.HasRecommendation &&
                         result.Name.Equals(
                             _report.RecommendedName, StringComparison.OrdinalIgnoreCase))
                     {
-                        item.BackColor = Color.FromArgb(232, 245, 233);
+                        item.BackColor = Theme.Current.SelectionBg;
+                        item.UseItemStyleForSubItems = true;
                     }
                     _list.Items.Add(item);
                     if (first == null && result.PartiallyOk)

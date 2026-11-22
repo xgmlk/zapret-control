@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -11,6 +12,9 @@ namespace ZapretControl
     {
         private const int TitleBarHeight = 44;
         private const int WM_NCLBUTTONDOWN = 0xA1;
+        private const int WM_SYSCOMMAND = 0x0112;
+        private const int SC_MINIMIZE = 0xF020;
+        private const int SC_RESTORE = 0xF120;
         private const int HTCAPTION = 0x2;
 
         [DllImport("user32.dll")]
@@ -31,6 +35,7 @@ namespace ZapretControl
         private readonly TabView[] _tabs;
         private readonly Timer _timer;
         private Label _footer;
+        private Button _themeButton;
         private int _activeIndex = -1;
         private int _firstRunRetries;
 
@@ -40,10 +45,10 @@ namespace ZapretControl
             ClientSize = new Size(900, 680);
             FormBorderStyle = FormBorderStyle.None;
             MaximizeBox = false;
-            MinimizeBox = false;
+            MinimizeBox = true;
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(247, 246, 243);
-            ForeColor = Color.FromArgb(44, 44, 46);
+            BackColor = Theme.Current.WindowBg;
+            ForeColor = Theme.Current.TextPrimary;
             Font = new Font("Segoe UI", 9F);
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
@@ -58,6 +63,15 @@ namespace ZapretControl
             _lights[0] = CreateLight(TrafficLightKind.Minimize, ClientSize.Width - 70);
             _lights[1] = CreateLight(TrafficLightKind.Zoom, ClientSize.Width - 50);
             _lights[2] = CreateLight(TrafficLightKind.Close, ClientSize.Width - 30);
+
+            _themeButton = new ThemedButton();
+            _themeButton.Text = Theme.IsDark ? "Светлая тема" : "Тёмная тема";
+            _themeButton.Font = new Font("Segoe UI", 8F, FontStyle.Regular);
+            _themeButton.SetBounds(ClientSize.Width - 190, 9, 110, 26);
+            _themeButton.AccessibleName = "Переключить тему";
+            _themeButton.Click += OnThemeClick;
+            Theme.StyleButton(_themeButton);
+            Controls.Add(_themeButton);
 
             using (Stream iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("ZapretControl.app.ico"))
             {
@@ -83,6 +97,7 @@ namespace ZapretControl
             HomeTab homeTab = (HomeTab)_tabs[0];
             TestsTab testsTab = (TestsTab)_tabs[7];
             UpdatesTab updatesTab = (UpdatesTab)_tabs[5];
+            TelegramTab telegramTab = (TelegramTab)_tabs[8];
             updatesTab.AppUpdateAvailable += OnAppUpdateAvailable;
             homeTab.CheckCompleted += delegate(HomeCheckReport report)
             {
@@ -91,6 +106,18 @@ namespace ZapretControl
             homeTab.DetailsRequested += delegate
             {
                 ActivateTab(7);
+            };
+            homeTab.TelegramToggleRequested += delegate
+            {
+                telegramTab.ToggleFromExternal();
+            };
+            homeTab.TelegramSettingsRequested += delegate
+            {
+                ActivateTab(8);
+            };
+            telegramTab.ProxyStateChanged += delegate
+            {
+                UpdateHomeTelegram();
             };
             testsTab.AdviseRequested += delegate
             {
@@ -105,16 +132,17 @@ namespace ZapretControl
                 _tabs[i].Visible = false;
                 Controls.Add(_tabs[i]);
 
-                Button button = new Button();
+                Button button = new ThemedButton();
                 button.Text = _tabs[i].TabTitle;
                 button.Font = _tabFont;
-                button.ForeColor = Color.FromArgb(90, 88, 84);
+                button.ForeColor = Theme.Current.TabInactiveText;
                 button.BackColor = Color.Transparent;
                 button.FlatStyle = FlatStyle.Flat;
                 button.FlatAppearance.BorderSize = 0;
-                button.FlatAppearance.MouseOverBackColor = Color.FromArgb(241, 238, 232);
+                button.FlatAppearance.MouseOverBackColor = Theme.Current.ButtonHover;
                 button.UseVisualStyleBackColor = false;
                 button.Cursor = Cursors.Hand;
+                button.Name = "tabButton";
                 button.SetBounds(24 + i * 92, 50, 88, 36);
                 button.Tag = i;
                 button.Click += OnTabClick;
@@ -125,8 +153,9 @@ namespace ZapretControl
 
             _footer = new Label();
             _footer.Font = _footerFont;
-            _footer.ForeColor = Color.FromArgb(110, 110, 115);
+            _footer.ForeColor = Theme.Current.TextSecondary;
             _footer.BackColor = Color.Transparent;
+            _footer.Tag = "muted";
             _footer.TextAlign = ContentAlignment.MiddleLeft;
             _footer.SetBounds(24, 640, 480, 18);
             Controls.Add(_footer);
@@ -134,8 +163,9 @@ namespace ZapretControl
             Label version = new Label();
             version.Text = "Zapret Control " + AppInfo.Version + " · права администратора";
             version.Font = _footerFont;
-            version.ForeColor = Color.FromArgb(110, 110, 115);
+            version.ForeColor = Theme.Current.TextSecondary;
             version.BackColor = Color.Transparent;
+            version.Tag = "muted";
             version.TextAlign = ContentAlignment.MiddleRight;
             version.SetBounds(420, 640, 456, 18);
             Controls.Add(version);
@@ -146,7 +176,8 @@ namespace ZapretControl
             {
                 ActivateTab(0);
                 RefreshActiveTab();
-                ((TelegramTab)_tabs[8]).StartIfConfigured();
+                UpdateHomeTelegram();
+                telegramTab.StartIfConfigured();
                 BeginInvoke(new Action(CheckFirstRunAndUpdates));
             };
             FormClosing += OnFormClosing;
@@ -155,6 +186,7 @@ namespace ZapretControl
             _timer.Interval = 3000;
             _timer.Tick += OnTimerTick;
             _timer.Start();
+            Theme.Apply(this);
         }
 
         protected override CreateParams CreateParams
@@ -185,8 +217,8 @@ namespace ZapretControl
             Rectangle bounds = new Rectangle(0, 0, Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height));
             using (LinearGradientBrush brush = new LinearGradientBrush(
                 bounds,
-                Color.FromArgb(250, 249, 246),
-                Color.FromArgb(242, 240, 236),
+                Theme.Current.WindowTop,
+                Theme.Current.WindowBottom,
                 90f))
             {
                 e.Graphics.FillRectangle(brush, bounds);
@@ -203,7 +235,7 @@ namespace ZapretControl
             using (GraphicsPath border = UiDrawing.RoundedRect(
                 new RectangleF(0.5f, 0.5f, ClientSize.Width - 1f, ClientSize.Height - 1f),
                 10f * scale))
-            using (Pen pen = new Pen(Color.FromArgb(229, 226, 220), 1f))
+            using (Pen pen = new Pen(Theme.Current.Border, 1f))
             {
                 g.DrawPath(pen, border);
             }
@@ -212,7 +244,7 @@ namespace ZapretControl
             {
                 format.Alignment = StringAlignment.Center;
                 format.LineAlignment = StringAlignment.Center;
-                using (SolidBrush brush = new SolidBrush(Color.FromArgb(110, 110, 115)))
+                using (SolidBrush brush = new SolidBrush(Theme.Current.TitleText))
                 {
                     g.DrawString(
                         "Zapret Control",
@@ -223,7 +255,7 @@ namespace ZapretControl
                 }
             }
 
-            using (Pen divider = new Pen(Color.FromArgb(236, 233, 227), 1f))
+            using (Pen divider = new Pen(Theme.Current.Divider, 1f))
             {
                 g.DrawLine(divider, 24f * scale, 92f * scale,
                     ClientSize.Width - 24f * scale, 92f * scale);
@@ -250,6 +282,80 @@ namespace ZapretControl
             }
             ReleaseCapture();
             SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+        }
+
+        // Clicking the taskbar button sends SC_MINIMIZE / SC_RESTORE through
+        // the system menu. A borderless window ignores both unless it is
+        // minimise-capable and the commands are handled here, which is what
+        // makes the panel icon collapse and restore the window.
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_SYSCOMMAND)
+            {
+                int command = m.WParam.ToInt32() & 0xFFF0;
+                if (command == SC_MINIMIZE)
+                {
+                    WindowState = FormWindowState.Minimized;
+                    return;
+                }
+                if (command == SC_RESTORE)
+                {
+                    WindowState = FormWindowState.Normal;
+                    Activate();
+                    return;
+                }
+            }
+            base.WndProc(ref m);
+        }
+
+        private void OnThemeClick(object sender, EventArgs e)
+        {
+            SettingsData settings = Settings.Load();
+            settings.DarkTheme = !settings.DarkTheme;
+            Settings.Save();
+            if (MessageBox.Show(
+                    this,
+                    "Тема изменится после перезапуска. Перезапустить сейчас?",
+                    "Тема",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) == DialogResult.Yes)
+            {
+                RestartElevated();
+            }
+        }
+
+        private void RestartElevated()
+        {
+            if (OperationGuard.IsBusy)
+            {
+                MessageBox.Show(
+                    this,
+                    "Дождитесь завершения текущей операции.",
+                    "Zapret Control",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+            try
+            {
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = Application.ExecutablePath;
+                info.WorkingDirectory = AppPaths.InstallDirectory;
+                info.UseShellExecute = true;
+                info.Verb = "runas";
+                Process.Start(info);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    "Не удалось перезапустить приложение: " + ex.Message,
+                    "Zapret Control",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+            Close();
         }
 
         private TrafficLightButton CreateLight(TrafficLightKind kind, int x)
@@ -300,16 +406,20 @@ namespace ZapretControl
             {
                 _tabs[_activeIndex].Visible = false;
                 _tabButtons[_activeIndex].Font = _tabFont;
-                _tabButtons[_activeIndex].ForeColor = Color.FromArgb(90, 88, 84);
+                _tabButtons[_activeIndex].ForeColor = Theme.Current.TabInactiveText;
                 _tabButtons[_activeIndex].BackColor = Color.Transparent;
             }
             _activeIndex = index;
             _tabs[index].Visible = true;
             _tabs[index].BringToFront();
             _tabButtons[index].Font = _tabActiveFont;
-            _tabButtons[index].ForeColor = Color.FromArgb(44, 44, 46);
-            _tabButtons[index].BackColor = Color.FromArgb(252, 251, 248);
+            _tabButtons[index].ForeColor = Theme.Current.TextPrimary;
+            _tabButtons[index].BackColor = Theme.Current.TabActiveBg;
             _tabs[index].ActivateTab();
+            if (index == 0)
+            {
+                UpdateHomeTelegram();
+            }
             _tabs[index].RefreshData();
             _footer.Text = "Обновлено " + DateTime.Now.ToString("HH:mm:ss");
         }
@@ -413,9 +523,23 @@ namespace ZapretControl
             }
         }
 
-        private void OnAppUpdateAvailable(UpdateCheckResult result)
+        private void UpdateHomeTelegram()
         {
-            if (IsDisposed || Disposing || result == null)
+            HomeTab home = _tabs[0] as HomeTab;
+            TelegramTab telegram = _tabs[8] as TelegramTab;
+            if (home == null || telegram == null)
+            {
+                return;
+            }
+            home.SetTelegramProxyState(
+                telegram.ProxyIsRunning,
+                telegram.ProxyStatusShort,
+                false,
+                telegram.ProxyStartError);
+        }
+
+        private void OnAppUpdateAvailable(UpdateCheckResult result)
+        {            if (IsDisposed || Disposing || result == null)
             {
                 return;
             }

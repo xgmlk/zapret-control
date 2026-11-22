@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -17,6 +18,7 @@ namespace ZapretControl
     {
         internal bool Running;
         internal int Port;
+        internal int Pid;
         internal string Secret;
         internal string StartedUtc;
     }
@@ -1146,35 +1148,54 @@ namespace ZapretControl
             }
         }
 
-        internal static string StatusPath
+        internal static string StatusDirectory
+        {
+            get { return Path.Combine(AppPaths.DataDirectory, "proxy"); }
+        }
+
+        // Status is per process: a second instance (or a CLI self-test) must
+        // not overwrite or delete the status of a proxy already running in the
+        // GUI. The old single file is still read for compatibility.
+        internal static string LegacyStatusPath
         {
             get { return Path.Combine(AppPaths.DataDirectory, "tg-proxy.json"); }
+        }
+
+        private static string OwnStatusPath()
+        {
+            return Path.Combine(
+                StatusDirectory,
+                "tg-proxy-" + Process.GetCurrentProcess().Id + ".json");
         }
 
         private void WriteStatusFile()
         {
             try
             {
+                AppPaths.EnsureDirectory(StatusDirectory);
                 Dictionary<string, object> data =
                     new Dictionary<string, object>();
                 data["port"] = Port;
+                data["pid"] = Process.GetCurrentProcess().Id;
                 data["secret"] = "dd" + SecretHex;
                 data["started_utc"] = DateTime.UtcNow.ToString("o");
                 JavaScriptSerializer serializer = new JavaScriptSerializer();
-                AtomicFile.WriteAllText(StatusPath, serializer.Serialize(data));
+                AtomicFile.WriteAllText(
+                    OwnStatusPath(), serializer.Serialize(data));
             }
             catch (Exception)
             {
             }
         }
 
-        private static void DeleteStatusFile()
+        private void DeleteStatusFile()
         {
             try
             {
-                if (File.Exists(StatusPath))
+                string path = OwnStatusPath();
+                if (File.Exists(path))
                 {
-                    File.Delete(StatusPath);
+                    File.Delete(path);
                 }
             }
             catch (Exception)
@@ -1184,37 +1205,78 @@ namespace ZapretControl
 
         internal static TgProxyStatusInfo ReadStatusFile()
         {
+            TgProxyStatusInfo best = null;
+            string bestStarted = null;
+            try
+            {
+                if (Directory.Exists(StatusDirectory))
+                {
+                    string[] files = Directory.GetFiles(
+                        StatusDirectory, "tg-proxy-*.json");
+                    for (int i = 0; i < files.Length; i++)
+                    {
+                        TgProxyStatusInfo info = ParseStatusFile(files[i]);
+                        if (!info.Running)
+                        {
+                            continue;
+                        }
+                        if (best == null ||
+                            string.CompareOrdinal(
+                                info.StartedUtc, bestStarted) > 0)
+                        {
+                            best = info;
+                            bestStarted = info.StartedUtc;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+            if (best != null)
+            {
+                return best;
+            }
+            TgProxyStatusInfo legacy = ParseStatusFile(LegacyStatusPath);
+            return legacy.Running ? legacy : new TgProxyStatusInfo();
+        }
+
+        private static TgProxyStatusInfo ParseStatusFile(string path)
+        {
             TgProxyStatusInfo info = new TgProxyStatusInfo();
             try
             {
-                if (!File.Exists(StatusPath))
+                if (!File.Exists(path))
                 {
                     return info;
                 }
                 JavaScriptSerializer serializer = new JavaScriptSerializer();
                 Dictionary<string, object> data =
                     serializer.DeserializeObject(
-                        File.ReadAllText(StatusPath, Encoding.UTF8))
+                        File.ReadAllText(path, Encoding.UTF8))
                         as Dictionary<string, object>;
                 if (data == null)
                 {
                     return info;
                 }
-                object portValue;
-                if (data.TryGetValue("port", out portValue))
+                object value;
+                if (data.TryGetValue("port", out value))
                 {
-                    info.Port = Convert.ToInt32(portValue);
+                    info.Port = Convert.ToInt32(value);
                 }
-                object secretValue;
-                if (data.TryGetValue("secret", out secretValue))
+                if (data.TryGetValue("pid", out value))
                 {
-                    info.Secret = secretValue as string;
+                    info.Pid = Convert.ToInt32(value);
                 }
-                object startedValue;
-                if (data.TryGetValue("started_utc", out startedValue))
+                if (data.TryGetValue("secret", out value))
                 {
-                    info.StartedUtc = startedValue as string;
+                    info.Secret = value as string;
                 }
+                if (data.TryGetValue("started_utc", out value))
+                {
+                    info.StartedUtc = value as string;
+                }
+                info.StartedUtc = info.StartedUtc ?? string.Empty;
                 if (info.Port > 0 && info.Port <= 65535)
                 {
                     info.Running = IsListening(info.Port);

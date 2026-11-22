@@ -73,7 +73,7 @@ namespace ZapretControl
 
         private RadioButton CreateRadio(Control parent, string text, int x, int y)
         {
-            RadioButton radio = new RadioButton();
+            RadioButton radio = new ThemedRadioButton();
             radio.Text = text;
             radio.SetBounds(x, y, 150, 22);
             parent.Controls.Add(radio);

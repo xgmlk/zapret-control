@@ -68,6 +68,7 @@ namespace ZapretControl
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            Theme.Initialize();
             Application.Run(new MainForm());
         }
 

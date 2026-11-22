@@ -69,22 +69,24 @@ namespace ZapretControl
             _bridge = AddButton(proxyCard, "Тест моста", 526, 158, 120, 32,
                 OnBridgeTest);
 
-            _autostart = new CheckBox();
+            _autostart = new ThemedCheckBox();
             _autostart.Text = "Автозапуск";
             _autostart.SetBounds(20, 202, 110, 22);
             _autostart.ForeColor = TextColor;
             _autostart.BackColor = Color.Transparent;
             _autostart.Checked = settings.TgProxyAutostart;
             _autostart.CheckedChanged += OnAutostartChanged;
+            Theme.StyleCheck(_autostart);
             proxyCard.Controls.Add(_autostart);
 
-            _coverage = new CheckBox();
+            _coverage = new ThemedCheckBox();
             _coverage.Text = "Покрыть zapret";
             _coverage.SetBounds(138, 202, 130, 22);
             _coverage.ForeColor = TextColor;
             _coverage.BackColor = Color.Transparent;
             _coverage.Checked = settings.TgProxyZapret;
             _coverage.CheckedChanged += OnCoverageChanged;
+            Theme.StyleCheck(_coverage);
             proxyCard.Controls.Add(_coverage);
 
             _coverageHint = AddMutedLabel(proxyCard,
@@ -121,6 +123,45 @@ namespace ZapretControl
             if (_proxy.IsRunning)
             {
                 _proxy.Stop();
+            }
+        }
+
+        public bool ProxyIsRunning
+        {
+            get { return _proxy.IsRunning; }
+        }
+
+        public string ProxyStartError
+        {
+            get { return _proxy.StartError; }
+        }
+
+        public string ProxyStatusShort
+        {
+            get
+            {
+                return _proxy.IsRunning
+                    ? "Включён · " + _proxy.Host + ":" + _proxy.Port
+                    : "Выключен";
+            }
+        }
+
+        public event Action ProxyStateChanged;
+
+        // Home tab toggle: same action as the local button, no settings.
+        public void ToggleFromExternal()
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            if (_proxy.IsRunning)
+            {
+                _proxy.Stop();
+            }
+            else
+            {
+                StartProxy();
             }
         }
 
@@ -417,6 +458,11 @@ namespace ZapretControl
                     _proxy.StartError ?? "Выключен. Включите прокси и " +
                     "нажмите «Открыть в Telegram».",
                     _proxy.StartError == null ? MutedColor : RedColor);
+            }
+            Action handler = ProxyStateChanged;
+            if (handler != null)
+            {
+                handler();
             }
         }
 

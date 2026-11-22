@@ -79,8 +79,8 @@ namespace ZapretControl
             Color border;
             if (!Enabled || _inactive)
             {
-                fill = Color.FromArgb(222, 220, 215);
-                border = Color.FromArgb(208, 206, 201);
+                fill = Theme.Current.TrafficInactiveFill;
+                border = Theme.Current.TrafficInactiveBorder;
             }
             else if (_kind == TrafficLightKind.Close)
             {

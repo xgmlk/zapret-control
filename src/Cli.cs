@@ -1031,6 +1031,8 @@ namespace ZapretControl
             Console.WriteLine("running=" + (status.Running ? "true" : "false"));
             Console.WriteLine("port=" +
                 (status.Port > 0 ? status.Port.ToString() : string.Empty));
+            Console.WriteLine("pid=" +
+                (status.Pid > 0 ? status.Pid.ToString() : string.Empty));
             Console.WriteLine("secret=" + (status.Secret ?? string.Empty));
             Console.WriteLine("started_utc=" + (status.StartedUtc ?? string.Empty));
             return status.Running ? 0 : 1;
@@ -2015,10 +2017,20 @@ namespace ZapretControl
             SettingsData telegramDefaults = new SettingsData();
             if (telegramDefaults.TgProxyPort != 1443 ||
                 telegramDefaults.TgProxyAutostart ||
-                !telegramDefaults.TgProxyZapret)
+                !telegramDefaults.TgProxyZapret ||
+                telegramDefaults.DarkTheme)
             {
                 Console.Error.WriteLine(
                     "selftest failed: Telegram settings defaults");
+                return 1;
+            }
+            if (!TgProxyService.StatusDirectory.EndsWith(
+                    "proxy", StringComparison.OrdinalIgnoreCase) ||
+                !TgProxyService.LegacyStatusPath.EndsWith(
+                    "tg-proxy.json", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine(
+                    "selftest failed: Telegram status paths");
                 return 1;
             }
 

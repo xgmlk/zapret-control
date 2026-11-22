@@ -42,6 +42,7 @@ namespace ZapretControl
             _list.Columns.Add("", 36);
             _list.Columns.Add("Проверка", 200);
             _list.Columns.Add("Результат", 570);
+            Theme.StyleList(_list);
             card.Controls.Add(_list);
         }
 

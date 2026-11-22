@@ -7,19 +7,50 @@ namespace ZapretControl
 {
     public abstract class TabView : Panel
     {
-        protected static readonly Color TextColor = Color.FromArgb(44, 44, 46);
-        protected static readonly Color MutedColor = Color.FromArgb(110, 110, 115);
-        protected static readonly Color GreenColor = Color.FromArgb(31, 122, 51);
-        protected static readonly Color RedColor = Color.FromArgb(168, 58, 51);
-        protected static readonly Color AmberColor = Color.FromArgb(150, 112, 28);
-        protected static readonly Color CardColor = Color.FromArgb(252, 251, 248);
-        protected static readonly Color BorderColor = Color.FromArgb(232, 229, 223);
-        protected static readonly Color ButtonColor = Color.FromArgb(253, 252, 249);
+        protected static Color TextColor
+        {
+            get { return Theme.Current.TextPrimary; }
+        }
+
+        protected static Color MutedColor
+        {
+            get { return Theme.Current.TextSecondary; }
+        }
+
+        protected static Color GreenColor
+        {
+            get { return Theme.Current.Success; }
+        }
+
+        protected static Color RedColor
+        {
+            get { return Theme.Current.Danger; }
+        }
+
+        protected static Color AmberColor
+        {
+            get { return Theme.Current.Warning; }
+        }
+
+        protected static Color CardColor
+        {
+            get { return Theme.Current.CardBg; }
+        }
+
+        protected static Color BorderColor
+        {
+            get { return Theme.Current.Border; }
+        }
+
+        protected static Color ButtonColor
+        {
+            get { return Theme.Current.ButtonBg; }
+        }
 
         protected TabView()
         {
             DoubleBuffered = true;
-            BackColor = Color.FromArgb(247, 246, 243);
+            BackColor = Theme.Current.WindowBg;
             ForeColor = TextColor;
             Font = new Font("Segoe UI", 9F);
         }
@@ -44,8 +75,9 @@ namespace ZapretControl
                 Label caption = new Label();
                 caption.Text = title;
                 caption.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular);
-                caption.ForeColor = Color.FromArgb(111, 108, 102);
+                caption.ForeColor = Theme.Current.Caption;
                 caption.BackColor = Color.Transparent;
+                caption.Tag = "caption";
                 caption.SetBounds(18, 12, width - 36, 16);
                 card.Controls.Add(caption);
             }
@@ -59,6 +91,7 @@ namespace ZapretControl
             label.Text = text;
             label.ForeColor = TextColor;
             label.BackColor = Color.Transparent;
+            label.Tag = "text";
             label.SetBounds(x, y, width, height);
             parent.Controls.Add(label);
             return label;
@@ -70,6 +103,7 @@ namespace ZapretControl
             Label label = AddLabel(parent, text, x, y, width, height);
             label.ForeColor = MutedColor;
             label.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular);
+            label.Tag = "muted";
             return label;
         }
 
@@ -77,17 +111,10 @@ namespace ZapretControl
             Control parent, string text, int x, int y, int width, int height,
             EventHandler handler)
         {
-            Button button = new Button();
+            Button button = new ThemedButton();
             button.Text = text;
             button.Font = new Font("Segoe UI", 9F, FontStyle.Regular);
-            button.ForeColor = TextColor;
-            button.BackColor = ButtonColor;
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.BorderColor = Color.FromArgb(214, 210, 202);
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(247, 243, 234);
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(238, 233, 222);
-            button.UseVisualStyleBackColor = false;
+            Theme.StyleButton(button);
             button.Cursor = Cursors.Hand;
             button.SetBounds(x, y, width, height);
             button.Click += handler;
@@ -101,9 +128,12 @@ namespace ZapretControl
             TextBox box = new TextBox();
             box.SetBounds(x, y, width, height);
             box.ReadOnly = readOnly;
-            box.BackColor = readOnly ? Color.FromArgb(248, 247, 244) : Color.White;
+            box.BackColor = readOnly
+                ? Theme.Current.InputReadOnlyBg
+                : Theme.Current.InputBg;
             box.ForeColor = TextColor;
             box.BorderStyle = BorderStyle.FixedSingle;
+            box.Tag = "input";
             if (height > 40)
             {
                 box.Multiline = true;
@@ -117,6 +147,7 @@ namespace ZapretControl
         {
             label.Text = text;
             label.ForeColor = color;
+            label.Tag = "state";
         }
 
         protected static string ShortError(Exception ex)
@@ -213,8 +244,8 @@ namespace ZapretControl
         public CardPanel()
         {
             DoubleBuffered = true;
-            BackColor = Color.FromArgb(252, 251, 248);
-            ForeColor = Color.FromArgb(44, 44, 46);
+            BackColor = Theme.Current.CardBg;
+            ForeColor = Theme.Current.TextPrimary;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -223,7 +254,7 @@ namespace ZapretControl
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using (GraphicsPath path = UiDrawing.RoundedRect(
                 new RectangleF(0.5f, 0.5f, Width - 1f, Height - 1f), 10f))
-            using (Pen pen = new Pen(Color.FromArgb(232, 229, 223), 1f))
+            using (Pen pen = new Pen(Theme.Current.Border, 1f))
             {
                 e.Graphics.DrawPath(pen, path);
             }

@@ -22,6 +22,9 @@ namespace ZapretControl
         private Label _checkSummary;
         private Button _checkButton;
         private Button _detailsButton;
+        private Label _telegramStatus;
+        private Button _telegramButton;
+        private Button _telegramSettings;
         private IfaceStatus _ifaceStatus;
         private HomeCheckReport _lastCheck;
         private bool _hasLastReport;
@@ -34,6 +37,8 @@ namespace ZapretControl
 
         public event Action<HomeCheckReport> CheckCompleted;
         public event Action DetailsRequested;
+        public event Action TelegramToggleRequested;
+        public event Action TelegramSettingsRequested;
 
         public override string TabTitle
         {
@@ -47,12 +52,13 @@ namespace ZapretControl
             caption.Font = new System.Drawing.Font("Segoe UI", 8.25F);
             caption.ForeColor = MutedColor;
             caption.BackColor = System.Drawing.Color.Transparent;
+            caption.Tag = "caption";
             caption.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            caption.SetBounds(0, 4, 852, 16);
+            caption.SetBounds(0, 4, 520, 16);
             Controls.Add(caption);
 
             _toggle = new ToggleSwitch();
-            _toggle.SetBounds(276, 20, 300, 130);
+            _toggle.SetBounds(110, 20, 300, 130);
             _toggle.ToggleRequested += OnToggleRequested;
             Controls.Add(_toggle);
 
@@ -60,17 +66,36 @@ namespace ZapretControl
             _status.Font = new System.Drawing.Font("Segoe UI", 15F, System.Drawing.FontStyle.Bold);
             _status.ForeColor = TextColor;
             _status.BackColor = System.Drawing.Color.Transparent;
+            _status.Tag = "state";
             _status.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            _status.SetBounds(0, 154, 852, 30);
+            _status.SetBounds(0, 154, 520, 30);
             Controls.Add(_status);
 
             _detail = new Label();
             _detail.Font = new System.Drawing.Font("Segoe UI", 9F);
             _detail.ForeColor = MutedColor;
             _detail.BackColor = System.Drawing.Color.Transparent;
+            _detail.Tag = "muted";
             _detail.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            _detail.SetBounds(0, 186, 852, 18);
+            _detail.SetBounds(0, 186, 520, 18);
             Controls.Add(_detail);
+
+            CardPanel telegramCard = AddCard("TELEGRAM", 540, 0, 312, 204);
+            _telegramStatus = AddMutedLabel(
+                telegramCard, "Выключен.", 16, 30, 280, 40);
+            _telegramStatus.Font = new System.Drawing.Font("Segoe UI", 9F);
+            _telegramButton = AddButton(
+                telegramCard, "Включить прокси", 16, 76, 130, 30,
+                OnTelegramToggle);
+            _telegramButton.AccessibleName = "Включить или выключить прокси Telegram";
+            _telegramSettings = AddButton(
+                telegramCard, "Настройки", 154, 76, 142, 30,
+                OnTelegramSettings);
+            _telegramSettings.AccessibleName = "Открыть настройки прокси Telegram";
+            AddMutedLabel(telegramCard,
+                "Прокси на 127.0.0.1. Настройки, журнал и проверки — на " +
+                "вкладке «Telegram».",
+                16, 114, 280, 42);
 
             CardPanel ifaceCard = AddCard("ИНТЕРФЕЙС", 0, 210, 852, 96);
             _iface = AddLabel(ifaceCard, "Сейчас: —", 20, 32, 600, 22);
@@ -87,6 +112,7 @@ namespace ZapretControl
             _strategy = new ComboBox();
             _strategy.DropDownStyle = ComboBoxStyle.DropDownList;
             _strategy.SetBounds(20, 54, 500, 24);
+            Theme.StyleCombo(_strategy);
             _strategy.SelectedIndexChanged += OnStrategyChanged;
             strategyCard.Controls.Add(_strategy);
             _applyStrategy = AddButton(
@@ -120,6 +146,53 @@ namespace ZapretControl
                 checkCard, "Подробнее", 652, 28, 180, 30, OnDetails);
             _detailsButton.AccessibleName = "Подробный отчёт на вкладке Тесты";
             _detailsButton.Enabled = false;
+        }
+
+        // State pushed by MainForm from the Telegram tab: the home card only
+        // mirrors the proxy, all settings stay on the Telegram tab.
+        public void SetTelegramProxyState(
+            bool running, string status, bool busy, string error)
+        {
+            if (IsDisposed || Disposing || _telegramButton == null)
+            {
+                return;
+            }
+            _telegramButton.Text = running
+                ? "Выключить прокси"
+                : "Включить прокси";
+            _telegramButton.Enabled = !busy;
+            if (!running && !string.IsNullOrEmpty(error))
+            {
+                SetState(_telegramStatus, error, RedColor);
+            }
+            else if (running)
+            {
+                SetState(_telegramStatus,
+                    string.IsNullOrEmpty(status) ? "Включён" : status,
+                    GreenColor);
+            }
+            else
+            {
+                SetState(_telegramStatus,
+                    string.IsNullOrEmpty(status) ? "Выключен" : status,
+                    MutedColor);
+            }
+        }
+
+        private void OnTelegramToggle(object sender, EventArgs e)
+        {
+            if (TelegramToggleRequested != null)
+            {
+                TelegramToggleRequested();
+            }
+        }
+
+        private void OnTelegramSettings(object sender, EventArgs e)
+        {
+            if (TelegramSettingsRequested != null)
+            {
+                TelegramSettingsRequested();
+            }
         }
 
         public override void ActivateTab()

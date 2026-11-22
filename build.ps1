@@ -101,7 +101,8 @@ $common = Select-Sources @(
 )
 
 $guiSources = $common + (Select-Sources @(
-    'Program', 'MainForm', 'ToggleSwitch', 'TrafficLightButton', 'UiDrawing',
+    'Program', 'MainForm', 'Theme', 'ThemedControls', 'ToggleSwitch',
+    'TrafficLightButton', 'UiDrawing',
     'HomeTab', 'ServiceTab', 'GameTab', 'IpsetTab', 'FakesTab', 'UpdatesTab',
     'DiagnosticsTab', 'TestsTab', 'TelegramTab', 'TabView', 'HelpForm',
     'StrategyResultsForm', 'FirstRunForm'
@@ -110,7 +111,7 @@ $guiSources = $common + (Select-Sources @(
 $cliSources = $common + (Select-Sources @('Cli'))
 
 $setupSources = $common + (Select-Sources @(
-    'SetupProgram', 'SetupEngine', 'SetupForm'
+    'Theme', 'ThemedControls', 'SetupProgram', 'SetupEngine', 'SetupForm'
 ))
 
 $used = @($guiSources + $cliSources + $setupSources | ForEach-Object {

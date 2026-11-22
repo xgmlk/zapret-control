@@ -62,13 +62,15 @@ namespace ZapretControl
             AddMutedLabel(settings, "RELEASE.JSON", 20, 36, 160, 16);
             _manifest = AddTextBox(settings, 20, 56, 600, 24, false);
             AddButton(settings, "Сохранить", 630, 54, 120, 26, OnSaveSettings);
-            _autoCheck = new CheckBox();
+            _autoCheck = new ThemedCheckBox();
             _autoCheck.Text = "Проверять обновления при открытии вкладки";
             _autoCheck.SetBounds(20, 84, 360, 22);
+            Theme.StyleCheck(_autoCheck);
             settings.Controls.Add(_autoCheck);
-            _autoPayload = new CheckBox();
+            _autoPayload = new ThemedCheckBox();
             _autoPayload.Text = "Устанавливать payload автоматически";
             _autoPayload.SetBounds(390, 84, 360, 22);
+            Theme.StyleCheck(_autoPayload);
             settings.Controls.Add(_autoPayload);
 
             CardPanel logCard = AddCard("ЖУРНАЛ ОБНОВЛЕНИЙ", 0, 328, 852, 192);

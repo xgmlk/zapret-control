@@ -49,6 +49,7 @@ namespace ZapretControl
             _strategy = new ComboBox();
             _strategy.DropDownStyle = ComboBoxStyle.DropDownList;
             _strategy.SetBounds(20, 88, 500, 24);
+            Theme.StyleCombo(_strategy);
             _strategy.SelectedIndexChanged += OnStrategyChanged;
             service.Controls.Add(_strategy);
             _apply = AddButton(
@@ -56,9 +57,10 @@ namespace ZapretControl
             _restart = AddButton(
                 service, "Перезапустить", 690, 86, 142, 28, OnRestart);
 
-            _autoStart = new CheckBox();
+            _autoStart = new ThemedCheckBox();
             _autoStart.Text = "Запускать защиту при включении компьютера";
             _autoStart.SetBounds(20, 124, 370, 22);
+            Theme.StyleCheck(_autoStart);
             _autoStart.CheckedChanged += OnAutoStartChanged;
             service.Controls.Add(_autoStart);
             _toggleProtection = AddButton(

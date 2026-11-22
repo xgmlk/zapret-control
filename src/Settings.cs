@@ -22,6 +22,7 @@ namespace ZapretControl
         public string TgProxySecret { get; set; }
         public bool TgProxyAutostart { get; set; }
         public bool TgProxyZapret { get; set; }
+        public bool DarkTheme { get; set; }
 
         public SettingsData()
         {
@@ -40,6 +41,7 @@ namespace ZapretControl
             TgProxySecret = string.Empty;
             TgProxyAutostart = false;
             TgProxyZapret = true;
+            DarkTheme = false;
         }
     }
 

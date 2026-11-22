@@ -17,8 +17,8 @@ namespace ZapretControl
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
-            BackColor = Color.FromArgb(247, 246, 243);
-            ForeColor = Color.FromArgb(44, 44, 46);
+            BackColor = Theme.Current.WindowBg;
+            ForeColor = Theme.Current.TextPrimary;
             Font = new Font("Segoe UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi;
 
@@ -39,7 +39,9 @@ namespace ZapretControl
 
             Label subtitle = new Label();
             subtitle.Text = "Простыми словами — без технических терминов.";
-            subtitle.ForeColor = Color.FromArgb(110, 110, 115);
+            subtitle.ForeColor = Theme.Current.TextSecondary;
+            subtitle.BackColor = Color.Transparent;
+            subtitle.Tag = "muted";
             subtitle.Font = new Font("Segoe UI", 8.5F);
             subtitle.SetBounds(20, 44, 660, 18);
             Controls.Add(subtitle);
@@ -48,8 +50,8 @@ namespace ZapretControl
             body.SetBounds(20, 68, 660, 486);
             body.ReadOnly = true;
             body.BorderStyle = BorderStyle.FixedSingle;
-            body.BackColor = Color.FromArgb(252, 251, 248);
-            body.ForeColor = Color.FromArgb(44, 44, 46);
+            body.BackColor = Theme.Current.CardBg;
+            body.ForeColor = Theme.Current.TextPrimary;
             body.Font = new Font("Segoe UI", 9.5F);
             body.DetectUrls = false;
             body.WordWrap = true;
@@ -57,14 +59,16 @@ namespace ZapretControl
             body.Text = text ?? string.Empty;
             Controls.Add(body);
 
-            Button close = new Button();
+            Button close = new ThemedButton();
             close.Text = "Понятно";
             close.SetBounds(560, 566, 120, 32);
             close.Click += delegate { Close(); };
+            Theme.StyleButton(close);
             Controls.Add(close);
 
             AcceptButton = close;
             CancelButton = close;
+            Theme.Apply(this);
         }
     }
 

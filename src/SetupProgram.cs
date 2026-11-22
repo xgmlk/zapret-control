@@ -85,6 +85,7 @@ namespace ZapretControl
                     RunSilent(options, mode);
                     return 0;
                 }
+                Theme.Initialize();
                 using (SetupForm form = new SetupForm(options, mode))
                 {
                     return form.ShowDialog() == DialogResult.OK ? 0 : 2;

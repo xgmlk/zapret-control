@@ -128,6 +128,7 @@ namespace ZapretControl
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            ThemePalette palette = Theme.Current;
 
             float scale = g.DpiX / 96f;
             float margin = 7f * scale;
@@ -140,8 +141,8 @@ namespace ZapretControl
             {
                 using (LinearGradientBrush fill = new LinearGradientBrush(
                     track,
-                    Color.FromArgb(243, 241, 237),
-                    Color.FromArgb(228, 226, 221),
+                    palette.ToggleTrackTop,
+                    palette.ToggleTrackBottom,
                     90f))
                 {
                     g.FillPath(fill, trackPath);
@@ -152,15 +153,15 @@ namespace ZapretControl
                 RectangleF innerRect = new RectangleF(track.X, track.Y, track.Width, track.Height * 0.42f);
                 using (LinearGradientBrush inner = new LinearGradientBrush(
                     innerRect,
-                    Color.FromArgb(30, 120, 115, 105),
-                    Color.FromArgb(0, 120, 115, 105),
+                    Color.FromArgb(30, palette.ToggleShadow),
+                    Color.FromArgb(0, palette.ToggleShadow),
                     90f))
                 {
                     g.FillRectangle(inner, innerRect);
                 }
                 g.ResetClip();
 
-                using (Pen border = new Pen(Color.FromArgb(213, 210, 204), 1.2f * scale))
+                using (Pen border = new Pen(palette.ToggleTrackBorder, 1.2f * scale))
                 {
                     g.DrawPath(border, trackPath);
                 }
@@ -190,7 +191,7 @@ namespace ZapretControl
             {
                 format.Alignment = StringAlignment.Center;
                 format.LineAlignment = StringAlignment.Center;
-                using (SolidBrush textBrush = new SolidBrush(Color.FromArgb(178, 174, 167)))
+                using (SolidBrush textBrush = new SolidBrush(palette.ToggleText))
                 {
                     g.DrawString(text, _labelFont, textBrush, labelRect, format);
                 }
@@ -210,8 +211,8 @@ namespace ZapretControl
                     path.AddEllipse(shadow);
                     using (PathGradientBrush brush = new PathGradientBrush(path))
                     {
-                        brush.CenterColor = Color.FromArgb(26 / layer, 90, 85, 75);
-                        brush.SurroundColors = new Color[] { Color.FromArgb(0, 90, 85, 75) };
+                        brush.CenterColor = Color.FromArgb(26 / layer, palette.ToggleShadow);
+                        brush.SurroundColors = new Color[] { Color.FromArgb(0, palette.ToggleShadow) };
                         g.FillPath(brush, path);
                     }
                 }
@@ -219,13 +220,13 @@ namespace ZapretControl
 
             using (LinearGradientBrush knobFill = new LinearGradientBrush(
                 knob,
-                Color.White,
-                Color.FromArgb(243, 241, 237),
+                palette.ToggleKnobTop,
+                palette.ToggleKnobBottom,
                 90f))
             {
                 g.FillEllipse(knobFill, knob);
             }
-            using (Pen knobBorder = new Pen(Color.FromArgb(226, 223, 217), 1f * scale))
+            using (Pen knobBorder = new Pen(palette.ToggleKnobBorder, 1f * scale))
             {
                 g.DrawEllipse(knobBorder, knob);
             }
@@ -233,7 +234,8 @@ namespace ZapretControl
             if (_busy)
             {
                 using (GraphicsPath overlayPath = UiDrawing.RoundedRect(track, radius))
-                using (SolidBrush overlay = new SolidBrush(Color.FromArgb(120, 247, 246, 243)))
+                using (SolidBrush overlay = new SolidBrush(
+                    Color.FromArgb(palette.ToggleOverlayAlpha, palette.ToggleOverlayBg)))
                 {
                     g.FillPath(overlay, overlayPath);
                 }

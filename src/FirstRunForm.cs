@@ -28,8 +28,8 @@ namespace ZapretControl
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
-            BackColor = Color.FromArgb(247, 246, 243);
-            ForeColor = Color.FromArgb(44, 44, 46);
+            BackColor = Theme.Current.WindowBg;
+            ForeColor = Theme.Current.TextPrimary;
             Font = new Font("Segoe UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi;
 
@@ -58,7 +58,7 @@ namespace ZapretControl
             text.SetBounds(24, 58, 472, 104);
             Controls.Add(text);
 
-            Button advise = new Button();
+            Button advise = new ThemedButton();
             advise.Text = "Подобрать";
             advise.SetBounds(156, 190, 108, 32);
             advise.Click += delegate
@@ -69,7 +69,7 @@ namespace ZapretControl
             };
             Controls.Add(advise);
 
-            Button manual = new Button();
+            Button manual = new ThemedButton();
             manual.Text = "Выбрать вручную";
             manual.SetBounds(272, 190, 132, 32);
             manual.Click += delegate
@@ -80,7 +80,7 @@ namespace ZapretControl
             };
             Controls.Add(manual);
 
-            Button later = new Button();
+            Button later = new ThemedButton();
             later.Text = "Позже";
             later.SetBounds(412, 190, 84, 32);
             later.Click += delegate
@@ -93,6 +93,7 @@ namespace ZapretControl
 
             AcceptButton = advise;
             CancelButton = later;
+            Theme.Apply(this);
         }
     }
 }

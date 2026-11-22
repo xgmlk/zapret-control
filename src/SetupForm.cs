@@ -34,8 +34,8 @@ namespace ZapretControl
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(247, 246, 243);
-            ForeColor = Color.FromArgb(44, 44, 46);
+            BackColor = Theme.Current.WindowBg;
+            ForeColor = Theme.Current.TextPrimary;
             Font = new Font("Segoe UI", 9F);
             AutoScaleMode = AutoScaleMode.Dpi;
 
@@ -57,7 +57,9 @@ namespace ZapretControl
             Label subtitle = new Label();
             subtitle.Text = ModeTitle(_mode) + " · версия " + AppInfo.Version +
                             " · " + AppPaths.TargetInstallDirectory;
-            subtitle.ForeColor = Color.FromArgb(110, 110, 115);
+            subtitle.ForeColor = Theme.Current.TextSecondary;
+            subtitle.BackColor = Color.Transparent;
+            subtitle.Tag = "muted";
             subtitle.SetBounds(26, 52, 550, 20);
             Controls.Add(subtitle);
 
@@ -72,6 +74,7 @@ namespace ZapretControl
                 _strategy = new ComboBox();
                 _strategy.DropDownStyle = ComboBoxStyle.DropDownList;
                 _strategy.SetBounds(180, top, 390, 24);
+                Theme.StyleCombo(_strategy);
                 Controls.Add(_strategy);
                 PopulateStrategies();
                 top += 36;
@@ -128,7 +131,8 @@ namespace ZapretControl
             _log.Multiline = true;
             _log.ReadOnly = true;
             _log.ScrollBars = ScrollBars.Vertical;
-            _log.BackColor = Color.FromArgb(252, 251, 248);
+            _log.BackColor = Theme.Current.InputReadOnlyBg;
+            _log.ForeColor = Theme.Current.TextPrimary;
             _log.SetBounds(26, top + 22, 548, 128);
             Controls.Add(_log);
 
@@ -139,17 +143,20 @@ namespace ZapretControl
 
             _status = new Label();
             _status.Text = "Готово к установке.";
-            _status.ForeColor = Color.FromArgb(110, 110, 115);
+            _status.ForeColor = Theme.Current.TextSecondary;
+            _status.BackColor = Color.Transparent;
+            _status.Tag = "muted";
             _status.SetBounds(26, 450, 360, 20);
             Controls.Add(_status);
 
-            _start = new Button();
+            _start = new ThemedButton();
             _start.Text = ModeAction(_mode);
             _start.SetBounds(376, 474, 96, 30);
             _start.Click += OnStart;
+            Theme.StyleButton(_start);
             Controls.Add(_start);
 
-            _cancel = new Button();
+            _cancel = new ThemedButton();
             _cancel.Text = "Отмена";
             _cancel.SetBounds(478, 474, 96, 30);
             _cancel.Click += delegate
@@ -160,18 +167,21 @@ namespace ZapretControl
                     Close();
                 }
             };
+            Theme.StyleButton(_cancel);
             Controls.Add(_cancel);
 
             FormClosing += OnFormClosing;
             AcceptButton = _start;
             CancelButton = _cancel;
+            Theme.Apply(this);
         }
 
         private CheckBox CreateCheck(string text, int top)
         {
-            CheckBox check = new CheckBox();
+            CheckBox check = new ThemedCheckBox();
             check.Text = text;
             check.SetBounds(26, top, 548, 22);
+            Theme.StyleCheck(check);
             Controls.Add(check);
             return check;
         }
