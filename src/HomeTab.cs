@@ -1027,6 +1027,18 @@ namespace ZapretControl
             }
         }
 
+        // Tray menu entry: the same guarded operation as the main toggle.
+        // It must not duplicate the service logic, otherwise tray and window
+        // can disagree about OperationGuard and the busy state.
+        public void ToggleProtectionFromTray()
+        {
+            if (IsDisposed || Disposing || _busy)
+            {
+                return;
+            }
+            OnToggleRequested(this, EventArgs.Empty);
+        }
+
         private async void OnToggleRequested(object sender, EventArgs e)
         {
             if (_busy)

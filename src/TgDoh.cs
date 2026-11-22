@@ -15,12 +15,6 @@ namespace ZapretControl
         private const int CacheMs = 300000;
         private const int DownMs = 30000;
 
-        private static readonly string[] Endpoints = new string[]
-        {
-            "https://1.1.1.1/dns-query",
-            "https://8.8.8.8/resolve"
-        };
-
         private sealed class Entry
         {
             internal string[] Addresses;
@@ -49,9 +43,10 @@ namespace ZapretControl
             }
 
             bool reachable = false;
-            for (int i = 0; i < Endpoints.Length; i++)
+            string[] endpoints = DataStore.DohEndpoints;
+            for (int i = 0; i < endpoints.Length; i++)
             {
-                string url = Endpoints[i] + "?name=" +
+                string url = endpoints[i] + "?name=" +
                     Uri.EscapeDataString(host) + "&type=A";
                 int status;
                 string body;

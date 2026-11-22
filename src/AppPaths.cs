@@ -64,6 +64,16 @@ namespace ZapretControl
             }
         }
 
+        public static string DataCacheDirectory
+        {
+            get { return Path.Combine(DataDirectory, "data"); }
+        }
+
+        public static string DataCachePath
+        {
+            get { return Path.Combine(DataCacheDirectory, "cache.json"); }
+        }
+
         public static string StagingDirectory
         {
             get { return Path.Combine(DataDirectory, "staging"); }

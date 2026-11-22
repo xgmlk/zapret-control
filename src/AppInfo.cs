@@ -22,6 +22,19 @@ namespace ZapretControl
         public const string DefaultManifestUrl =
             "https://github.com/xgmlk/zapret-control/releases/latest/download/release.json";
 
+        // Signed data channel: fronts, Telegram endpoints, DoH and the current
+        // Flowseal payload. The ECDSA P-256 public key is baked in; the private
+        // half lives only in the DATA_SIGN_KEY Actions secret.
+        public const string DataUrl =
+            "https://github.com/xgmlk/zapret-control/releases/download/data/data.json";
+        public const string DataSignatureUrl =
+            "https://github.com/xgmlk/zapret-control/releases/download/data/data.json.sig";
+        public const string DataFallbackBase =
+            "https://cdn.jsdelivr.net/gh/xgmlk/zapret-control@data/";
+        public const string DataPublicKeyBlob =
+            "RUNTMSAAAAAbs9A2YtWuLTn118SA/X3gVko1CeaFLrkPAu+cHXlk9ZXzCu+R5qCaXN9jtrY1p9S+cOaWzPmaBl53zRtLhmnd";
+        public const string DataPublicKeyBlobNext = "";
+
         public const string FlowsealVersionUrl =
             "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/.service/version.txt";
         public const string FlowsealIpsetUrl =

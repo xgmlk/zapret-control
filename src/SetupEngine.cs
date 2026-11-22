@@ -744,6 +744,9 @@ namespace ZapretControl
         private static void CloseInstalledGui(string target, int waitPid)
         {            if (waitPid > 0)
             {
+                // The caller may already have exited; signal first so a
+                // tray-hidden GUI starts closing before the long wait.
+                TrayIntegration.RequestExit();
                 try
                 {
                     using (Process process = Process.GetProcessById(waitPid))
@@ -767,7 +770,19 @@ namespace ZapretControl
                     string path = process.MainModule.FileName;
                     if (AppPaths.IsUnder(path, target))
                     {
-                        process.CloseMainWindow();
+                        // A hidden tray window has no MainWindowHandle, so
+                        // CloseMainWindow cannot reach it. Ask the running GUI
+                        // to exit through the named event first; an older build
+                        // without the listener falls back to the window close.
+                        bool asked = TrayIntegration.RequestExit();
+                        if (asked && process.WaitForExit(15000))
+                        {
+                            continue;
+                        }
+                        if (!asked || !process.HasExited)
+                        {
+                            process.CloseMainWindow();
+                        }
                         if (!process.WaitForExit(5000))
                         {
                             process.Kill();

@@ -168,6 +168,24 @@ namespace ZapretControl
             }
         }
 
+        // Tray menu entry: start/stop without opening Telegram. Only an
+        // explicit click in the window opens the tg:// link.
+        public void ToggleFromTray()
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            if (_proxy.IsRunning)
+            {
+                _proxy.Stop();
+            }
+            else
+            {
+                StartProxy(false);
+            }
+        }
+
         public override void ActivateTab()
         {
             UpdateState();

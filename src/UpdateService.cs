@@ -103,6 +103,7 @@ namespace ZapretControl
                         result.ManifestError =
                             "В release.json нет SHA256 для установщика; обновление отключено.";
                     }
+                    MergeDataPayload(result);
                     return result;
                 }
                 catch (Exception ex)
@@ -125,7 +126,36 @@ namespace ZapretControl
             catch (Exception)
             {
             }
+            MergeDataPayload(result);
             return result;
+        }
+
+        // The signed data channel carries the current Flowseal release even
+        // when our own release.json still names an older payload. It is the
+        // faster channel, so a newer version from data.json wins.
+        private static void MergeDataPayload(UpdateCheckResult result)
+        {
+            DataPayload data = DataStore.Payload;
+            if (result == null || data == null ||
+                string.IsNullOrEmpty(data.version) ||
+                !UpdateManifest.IsSha256(data.sha256) ||
+                !DataValidation.IsHttps(data.url))
+            {
+                return;
+            }
+            if (!AppInfo.IsNewer(data.version, result.CurrentPayloadVersion))
+            {
+                return;
+            }
+            if (result.PayloadUpdateAvailable &&
+                !AppInfo.IsNewer(data.version, result.LatestPayloadVersion))
+            {
+                return;
+            }
+            result.LatestPayloadVersion = data.version;
+            result.PayloadUrl = data.url;
+            result.PayloadSha256 = data.sha256;
+            result.PayloadUpdateAvailable = true;
         }
 
         public static PayloadUpdateResult ApplyPayload(
@@ -133,39 +163,50 @@ namespace ZapretControl
             string payloadRoot,
             Downloader.ProgressHandler progress)
         {
-            if (check == null || check.Manifest == null)
+            if (check == null)
             {
                 throw new InvalidOperationException(
-                    "Нет release.json: автоматическое обновление payload недоступно.");
+                    "Нет данных об обновлении payload.");
             }
-            UpdateManifest manifest = check.Manifest;
-            if (string.IsNullOrEmpty(manifest.PayloadVersion))
+            // The version, URL and hash may come from release.json or from the
+            // signed data channel; UpdateService.Check fills both into the
+            // result, so this method does not depend on the manifest.
+            string version = !string.IsNullOrEmpty(check.LatestPayloadVersion)
+                ? check.LatestPayloadVersion
+                : (check.Manifest == null ? string.Empty : check.Manifest.PayloadVersion);
+            string url = !string.IsNullOrEmpty(check.PayloadUrl)
+                ? check.PayloadUrl
+                : (check.Manifest == null ? string.Empty : check.Manifest.PayloadUrl);
+            string sha256 = !string.IsNullOrEmpty(check.PayloadSha256)
+                ? check.PayloadSha256
+                : (check.Manifest == null ? string.Empty : check.Manifest.PayloadSha256);
+            if (string.IsNullOrEmpty(version))
             {
-                throw new InvalidOperationException("В release.json нет версии payload.");
+                throw new InvalidOperationException("Нет версии payload.");
             }
-            if (!UpdateManifest.IsSha256(manifest.PayloadSha256))
+            if (!UpdateManifest.IsSha256(sha256))
             {
                 throw new InvalidOperationException(
-                    "В release.json нет SHA256 payload. Обновление отменено.");
+                    "Нет SHA256 payload. Обновление отменено.");
             }
-            RequireHttps(manifest.PayloadUrl);
+            RequireHttps(url);
 
             string zip = Path.Combine(
                 AppPaths.StagingDirectory,
-                "flowseal-" + manifest.PayloadVersion + "-" +
+                "flowseal-" + version + "-" +
                 Guid.NewGuid().ToString("N") + ".zip");
             try
             {
                 AppPaths.EnsureDirectory(AppPaths.StagingDirectory);
                 Downloader.DownloadFile(
-                    manifest.PayloadUrl, zip, 300000, 209715200, progress);
-                if (!HashUtil.Matches(zip, manifest.PayloadSha256))
+                    url, zip, 300000, 209715200, progress);
+                if (!HashUtil.Matches(zip, sha256))
                 {
                     throw new InvalidOperationException(
                         "SHA256 payload не совпадает. Обновление отменено.");
                 }
                 PayloadUpdateResult result = PayloadManager.UpdateFromZip(
-                    payloadRoot, zip, manifest.PayloadSha256, true, progress);
+                    payloadRoot, zip, sha256, true, progress);
                 Log("payload update " + result.OldVersion + " -> " +
                     result.NewVersion + " strategy=" + result.StrategyName +
                     " backup=" + (result.BackupPath ?? "none"));

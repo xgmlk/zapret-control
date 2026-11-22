@@ -87,6 +87,7 @@ function Select-Sources {
 $common = Select-Sources @(
     'AdminCheck', 'AppInfo', 'AppPaths', 'Settings', 'HashUtil', 'Downloader',
     'OperationGuard', 'AtomicFile',
+    'DataDocument', 'DataSignature', 'DataStore', 'DataUpdater',
     'ZapretService', 'IfaceStatus', 'NativeService', 'StrategyParser',
     'ServiceManager', 'PayloadManager', 'IpsetManager', 'IpsetSwitch',
     'FakesManager',
@@ -97,12 +98,12 @@ $common = Select-Sources @(
     'TgAesCtr', 'TgProtocol', 'TgWebSocket', 'TgMsgSplitter', 'TgFronts',
     'TgDoh', 'TgProxyService', 'TelegramProbe', 'TelegramCoverage',
     'UpdateManifest', 'UpdateService', 'SignatureVerifier', 'AclInstaller',
-    'SyncTask', 'PayloadPin', 'AssemblyInfo'
+    'SyncTask', 'PayloadPin', 'TrayIntegration', 'AssemblyInfo'
 )
 
 $guiSources = $common + (Select-Sources @(
     'Program', 'MainForm', 'Theme', 'ThemedControls', 'ToggleSwitch',
-    'TrafficLightButton', 'UiDrawing', 'ShellLauncher',
+    'TrafficLightButton', 'TrayIcons', 'UiDrawing', 'ShellLauncher',
     'HomeTab', 'ServiceTab', 'GameTab', 'IpsetTab', 'FakesTab', 'UpdatesTab',
     'DiagnosticsTab', 'TestsTab', 'TelegramTab', 'TabView', 'HelpForm',
     'StrategyResultsForm', 'FirstRunForm'

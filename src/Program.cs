@@ -11,11 +11,11 @@ namespace ZapretControl
     internal static class Program
     {
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
             if (!AdminCheck.IsAdministrator())
             {
-                if (RelaunchElevated())
+                if (RelaunchElevated(args))
                 {
                     return;
                 }
@@ -66,10 +66,94 @@ namespace ZapretControl
                 }
             };
 
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Theme.Initialize();
-            Application.Run(new MainForm());
+            bool startHidden = HasArgument(args, "--tray") ||
+                HasArgument(args, "--autostart");
+            EventWaitHandle showEvent = null;
+            EventWaitHandle exitEvent = null;
+            try
+            {
+                showEvent = new EventWaitHandle(
+                    false, EventResetMode.AutoReset, TrayIntegration.ShowEventName);
+                exitEvent = new EventWaitHandle(
+                    false, EventResetMode.AutoReset, TrayIntegration.ExitEventName);
+            }
+            catch (Exception)
+            {
+                // Without the handshake the app still works; only the second
+                // launch and Setup cannot ask this window to appear or exit.
+            }
+
+            Mutex instanceMutex;
+            if (!TrayIntegration.TryAcquire(out instanceMutex))
+            {
+                // Another GUI owns the mutex: ask it to come forward and leave
+                // without creating a second window or tray icon.
+                if (showEvent != null)
+                {
+                    try
+                    {
+                        showEvent.Set();
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+                if (showEvent != null)
+                {
+                    showEvent.Dispose();
+                }
+                if (exitEvent != null)
+                {
+                    exitEvent.Dispose();
+                }
+                return;
+            }
+
+            try
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Theme.Initialize();
+                Application.Run(new MainForm(startHidden, showEvent, exitEvent));
+            }
+            finally
+            {
+                if (showEvent != null)
+                {
+                    showEvent.Dispose();
+                }
+                if (exitEvent != null)
+                {
+                    exitEvent.Dispose();
+                }
+                if (instanceMutex != null)
+                {
+                    try
+                    {
+                        instanceMutex.ReleaseMutex();
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    instanceMutex.Dispose();
+                }
+            }
+        }
+
+        private static bool HasArgument(string[] args, string name)
+        {
+            if (args == null)
+            {
+                return false;
+            }
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void ReportFatal(Exception error)
@@ -102,7 +186,7 @@ namespace ZapretControl
             }
         }
 
-        private static bool RelaunchElevated()
+        private static bool RelaunchElevated(string[] args)
         {
             try
             {
@@ -111,6 +195,9 @@ namespace ZapretControl
                 info.WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.System);
                 info.UseShellExecute = true;
                 info.Verb = "runas";
+                // --tray/--autostart must survive self-elevation, otherwise a
+                // login launch would pop the window in the user's face.
+                info.Arguments = BuildArguments(args);
                 Process.Start(info);
                 return true;
             }
@@ -118,6 +205,32 @@ namespace ZapretControl
             {
                 return false;
             }
+        }
+
+        private static string BuildArguments(string[] args)
+        {
+            if (args == null || args.Length == 0)
+            {
+                return string.Empty;
+            }
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (i > 0)
+                {
+                    builder.Append(' ');
+                }
+                string value = args[i] ?? string.Empty;
+                if (value.IndexOf(' ') >= 0 || value.IndexOf('"') >= 0)
+                {
+                    builder.Append('"').Append(value.Replace("\"", "\\\"")).Append('"');
+                }
+                else
+                {
+                    builder.Append(value);
+                }
+            }
+            return builder.ToString();
         }
     }
 }

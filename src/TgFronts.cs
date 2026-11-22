@@ -35,30 +35,6 @@ namespace ZapretControl
 
         private const int DirectGoodMs = 60000;
 
-        private static readonly string[] Domains = new string[]
-        {
-            "pclead.co.uk",
-            "offshor.co.uk",
-            "cakeisalie.co.uk",
-            "noskomnadzor.co.uk",
-            "lovetrue.co.uk",
-            "sorokdva.co.uk",
-            "pyatdesyatdva.co.uk",
-            "kartoshka.co.uk",
-            "sorokodin.co.uk",
-            "pyatdesyatodin.co.uk",
-            "notelega.co.uk",
-            "ebally.co.uk",
-            "nebally.co.uk",
-            "havegreatday.co.uk",
-            "pomogite.co.uk",
-            "fixtelega.co.uk",
-            "sadnews.co.uk",
-            "onedaychamp.co.uk",
-            "stopblocking.co.uk",
-            "nothingthere.co.uk"
-        };
-
         private readonly ConcurrentDictionary<string, string> _sticky =
             new ConcurrentDictionary<string, string>();
         private readonly ConcurrentDictionary<string, long> _bad =
@@ -71,7 +47,7 @@ namespace ZapretControl
 
         internal static string[] AllBaseDomains
         {
-            get { return (string[])Domains.Clone(); }
+            get { return DataStore.Fronts; }
         }
 
         internal static string Lane(bool isMedia)
@@ -87,18 +63,21 @@ namespace ZapretControl
         internal IEnumerable<string> DomainsForDc(int dc, bool isMedia)
         {
             string lane = Lane(isMedia);
+            // One snapshot per connection: a data refresh may swap the active
+            // list at any moment, and mixing two lists would skip fronts.
+            string[] domains = DataStore.Fronts;
             List<string> fresh = new List<string>();
-            for (int i = 0; i < Domains.Length; i++)
+            for (int i = 0; i < domains.Length; i++)
             {
-                if (!IsBad(dc, lane, Domains[i]))
+                if (!IsBad(dc, lane, domains[i]))
                 {
-                    fresh.Add(Domains[i]);
+                    fresh.Add(domains[i]);
                 }
             }
 
             if (fresh.Count == 0)
             {
-                List<string> all = new List<string>(Domains);
+                List<string> all = new List<string>(domains);
                 Shuffle(all);
                 for (int i = 0; i < all.Count; i++)
                 {
@@ -122,7 +101,7 @@ namespace ZapretControl
             string sticky;
             if (!_sticky.TryGetValue(key, out sticky) || sticky == null)
             {
-                sticky = Domains[TgProtocol.RandomInt(Domains.Length)];
+                sticky = domains[TgProtocol.RandomInt(domains.Length)];
                 _sticky[key] = sticky;
             }
             bool hasSticky = false;

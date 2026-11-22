@@ -43,29 +43,6 @@ namespace ZapretControl
 
         internal const string DirectWsDomain = "web.telegram.org";
 
-        // Direct WebSocket targets used before the Cloudflare front fallback.
-        private static readonly Dictionary<int, string> DirectTargets =
-            new Dictionary<int, string>
-            {
-                { 2, "149.154.167.220" },
-                { 4, "149.154.167.220" }
-            };
-
-        // Plain TCP endpoints of the production data centres, used by the
-        // informational check on the "Tests" tab and by --tg-check.
-        private static readonly int[] KnownDcs =
-            new int[] { 1, 2, 3, 4, 5 };
-
-        private static readonly string[] KnownDcAddresses =
-            new string[]
-            {
-                "149.154.175.53",
-                "149.154.167.51",
-                "149.154.175.100",
-                "149.154.167.91",
-                "91.108.56.130"
-            };
-
         private static readonly byte[][] ReservedStarts =
         {
             new byte[] { 0x48, 0x45, 0x41, 0x44 }, // HEAD
@@ -78,21 +55,18 @@ namespace ZapretControl
 
         internal static int[] DcIndexes
         {
-            get { return (int[])KnownDcs.Clone(); }
+            get { return DataStore.DcIds; }
         }
 
         internal static string DcAddress(int dc)
         {
-            if (dc < 1 || dc > KnownDcAddresses.Length)
-            {
-                return string.Empty;
-            }
-            return KnownDcAddresses[dc - 1];
+            return DataStore.DcAddress(dc);
         }
 
         internal static bool TryDirectTarget(int dc, out string address)
         {
-            return DirectTargets.TryGetValue(NormalizeDc(dc), out address);
+            string sni;
+            return DataStore.TryDirectTarget(NormalizeDc(dc), out address, out sni);
         }
 
         internal static int NormalizeDc(int dc)
@@ -117,18 +91,19 @@ namespace ZapretControl
         internal static string[] WsDomains(int dc, bool isMedia)
         {
             int index = NormalizeDc(dc);
+            string web = DataStore.WebHost;
             if (isMedia)
             {
                 return new string[]
                 {
-                    "kws" + index + "-1.web.telegram.org",
-                    "kws" + index + ".web.telegram.org"
+                    "kws" + index + "-1." + web,
+                    "kws" + index + "." + web
                 };
             }
             return new string[]
             {
-                "kws" + index + ".web.telegram.org",
-                "kws" + index + "-1.web.telegram.org"
+                "kws" + index + "." + web,
+                "kws" + index + "-1." + web
             };
         }
 

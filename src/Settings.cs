@@ -23,6 +23,10 @@ namespace ZapretControl
         public bool TgProxyAutostart { get; set; }
         public bool TgProxyZapret { get; set; }
         public bool DarkTheme { get; set; }
+        public bool CloseToTray { get; set; }
+        public bool StartInTray { get; set; }
+        public bool TrayBalloons { get; set; }
+        public string LastCoverageRestartUtc { get; set; }
 
         public SettingsData()
         {
@@ -42,6 +46,10 @@ namespace ZapretControl
             TgProxyAutostart = false;
             TgProxyZapret = true;
             DarkTheme = false;
+            CloseToTray = true;
+            StartInTray = false;
+            TrayBalloons = true;
+            LastCoverageRestartUtc = string.Empty;
         }
     }
 
@@ -159,6 +167,10 @@ namespace ZapretControl
                 if (data.TgProxySecret == null)
                 {
                     data.TgProxySecret = string.Empty;
+                }
+                if (data.LastCoverageRestartUtc == null)
+                {
+                    data.LastCoverageRestartUtc = string.Empty;
                 }
                 return data;
             }

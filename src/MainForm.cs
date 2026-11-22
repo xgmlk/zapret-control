@@ -4,7 +4,9 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace ZapretControl
 {
@@ -33,14 +35,38 @@ namespace ZapretControl
         private readonly TrafficLightButton[] _lights;
         private readonly Button[] _tabButtons;
         private readonly TabView[] _tabs;
-        private readonly Timer _timer;
+        private readonly System.Windows.Forms.Timer _timer;
+        private readonly bool _startHidden;
+        private readonly EventWaitHandle _showEvent;
+        private readonly EventWaitHandle _exitEvent;
+        private readonly Icon _windowIcon;
         private Label _footer;
         private Button _themeButton;
+        private Icon _trayOnIcon;
+        private Icon _trayOffIcon;
+        private NotifyIcon _tray;
+        private ContextMenuStrip _trayMenu;
+        private ToolStripMenuItem _trayProtectItem;
+        private ToolStripMenuItem _trayTelegramItem;
+        private Thread _trayListener;
+        private volatile bool _trayListenerStop;
+        private volatile bool _exitRequested;
+        private bool _pendingExit;
+        private bool _trayHintShown;
+        private Action _balloonClick;
+        private DateTime _lastDataCheck = DateTime.MinValue;
+        private DateTime _lastReleaseCheck = DateTime.MinValue;
+        private volatile bool _dataCheckRunning;
+        private int _trayTicks;
         private int _activeIndex = -1;
         private int _firstRunRetries;
 
-        public MainForm()
+        public MainForm(
+            bool startHidden, EventWaitHandle showEvent, EventWaitHandle exitEvent)
         {
+            _startHidden = startHidden;
+            _showEvent = showEvent;
+            _exitEvent = exitEvent;
             Text = "Zapret Control";
             ClientSize = new Size(900, 680);
             FormBorderStyle = FormBorderStyle.None;
@@ -77,7 +103,8 @@ namespace ZapretControl
             {
                 if (iconStream != null)
                 {
-                    Icon = new Icon(iconStream, new Size(256, 256));
+                    _windowIcon = new Icon(iconStream, new Size(256, 256));
+                    Icon = _windowIcon;
                 }
             }
 
@@ -178,15 +205,25 @@ namespace ZapretControl
                 RefreshActiveTab();
                 UpdateHomeTelegram();
                 telegramTab.StartIfConfigured();
+                if (_startHidden)
+                {
+                    BeginInvoke(new Action(HideToTray));
+                }
                 BeginInvoke(new Action(CheckFirstRunAndUpdates));
+                BeginInvoke(new Action(StartDataCheck));
             };
             FormClosing += OnFormClosing;
+            SystemEvents.SessionEnding += OnSessionEnding;
+            DataUpdater.Completed += OnDataUpdateCompleted;
 
-            _timer = new Timer();
+            _timer = new System.Windows.Forms.Timer();
             _timer.Interval = 3000;
             _timer.Tick += OnTimerTick;
             _timer.Start();
             Theme.Apply(this);
+
+            CreateTray();
+            StartTrayListener();
         }
 
         protected override CreateParams CreateParams
@@ -355,6 +392,7 @@ namespace ZapretControl
                     MessageBoxIcon.Warning);
                 return;
             }
+            _exitRequested = true;
             Close();
         }
 
@@ -368,7 +406,7 @@ namespace ZapretControl
             }
             else if (kind == TrafficLightKind.Minimize)
             {
-                light.Click += delegate { WindowState = FormWindowState.Minimized; };
+                light.Click += delegate { HideToTray(); };
             }
             Controls.Add(light);
             return light;
@@ -426,7 +464,92 @@ namespace ZapretControl
 
         private void OnTimerTick(object sender, EventArgs e)
         {
-            RefreshActiveTab();
+            if (_pendingExit && !OperationGuard.IsBusy)
+            {
+                _pendingExit = false;
+                ExitFromTray();
+                return;
+            }
+            // Hidden tabs must not repaint or hit the service every 3 seconds;
+            // only the visible tab refreshes. The tray polls the service every
+            // 12 s while hidden and every tick while the window is open.
+            if (Visible)
+            {
+                RefreshActiveTab();
+            }
+            _trayTicks++;
+            if (Visible || _trayTicks % 4 == 0)
+            {
+                UpdateTrayState();
+            }
+            if (DateTime.UtcNow - _lastDataCheck >= TimeSpan.FromHours(6))
+            {
+                StartDataCheck();
+            }
+            if (DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(1))
+            {
+                _lastReleaseCheck = DateTime.UtcNow;
+                // CheckIfDue keeps its own six-hour gate and does nothing while
+                // an operation is running.
+                UpdatesTab updates = _tabs[5] as UpdatesTab;
+                if (updates != null)
+                {
+                    updates.CheckIfDue();
+                }
+            }
+        }
+
+        private void StartDataCheck()
+        {
+            if (_dataCheckRunning || IsDisposed || Disposing)
+            {
+                return;
+            }
+            _dataCheckRunning = true;
+            _lastDataCheck = DateTime.UtcNow;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    DataUpdater.Check(true);
+                }
+                catch (Exception ex)
+                {
+                    DataUpdater.Log("unhandled: " + ex.GetType().Name + ": " + ex.Message);
+                }
+                finally
+                {
+                    _dataCheckRunning = false;
+                }
+            });
+        }
+
+        private void OnDataUpdateCompleted(DataUpdateResult result)
+        {
+            if (IsDisposed || Disposing || result == null)
+            {
+                return;
+            }
+            if (InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke(new Action<DataUpdateResult>(OnDataUpdateCompleted), result);
+                }
+                catch (Exception)
+                {
+                }
+                return;
+            }
+            if (result.Ok && result.Changed)
+            {
+                Notify("Данные Telegram обновлены",
+                    "Фронтов: " + result.Fronts + ", данные seq " + result.Seq + ".");
+                if (Visible)
+                {
+                    RefreshActiveTab();
+                }
+            }
         }
 
         private void CheckFirstRunAndUpdates()
@@ -462,7 +585,7 @@ namespace ZapretControl
                 if (_firstRunRetries < 3)
                 {
                     _firstRunRetries++;
-                    Timer retry = new Timer();
+                    System.Windows.Forms.Timer retry = new System.Windows.Forms.Timer();
                     retry.Interval = 3000;
                     retry.Tick += delegate
                     {
@@ -539,16 +662,26 @@ namespace ZapretControl
         }
 
         private void OnAppUpdateAvailable(UpdateCheckResult result)
-        {            if (IsDisposed || Disposing || result == null)
+        {
+            if (IsDisposed || Disposing || result == null)
             {
                 return;
             }
             string text = "Доступна новая версия Zapret Control " +
-                result.LatestAppVersion + " (установлена " + AppInfo.Version +
-                ").\nОткрыть вкладку «Обновления»?";
+                result.LatestAppVersion + " (установлена " + AppInfo.Version + ").";
+            if (_tray != null)
+            {
+                _balloonClick = delegate
+                {
+                    ShowFromTray();
+                    ActivateTab(5);
+                };
+                Notify("Обновление Zapret Control", text);
+                return;
+            }
             if (MessageBox.Show(
                     this,
-                    text,
+                    text + "\nОткрыть вкладку «Обновления»?",
                     "Обновление Zapret Control",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Information) == DialogResult.Yes)
@@ -569,29 +702,426 @@ namespace ZapretControl
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
-            if (OperationGuard.IsBusy)
+            bool forced = e.CloseReason == CloseReason.WindowsShutDown ||
+                e.CloseReason == CloseReason.TaskManagerClosing ||
+                e.CloseReason == CloseReason.ApplicationExitCall;
+            if (OperationGuard.IsBusy && !forced)
             {
                 e.Cancel = true;
-                MessageBox.Show(
-                    this,
-                    "Дождитесь завершения текущей операции.",
-                    "Zapret Control",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                _exitRequested = false;
+                Notify("Дождитесь завершения операции",
+                    "Программа закроется после её окончания.");
+                if (Visible)
+                {
+                    MessageBox.Show(
+                        this,
+                        "Дождитесь завершения текущей операции.",
+                        "Zapret Control",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
                 return;
             }
+
+            bool userClosing = e.CloseReason == CloseReason.UserClosing;
+            SettingsData settings = Settings.Load();
+            if (!_exitRequested && userClosing && settings.CloseToTray)
+            {
+                e.Cancel = true;
+                HideToTray();
+                return;
+            }
+            if (!_exitRequested && userClosing && !settings.CloseToTray)
+            {
+                TelegramTab confirmation = _tabs[8] as TelegramTab;
+                if (confirmation != null && confirmation.ProxyIsRunning &&
+                    MessageBox.Show(
+                        this,
+                        "Прокси Telegram будет остановлен. Закрыть программу?",
+                        "Завершение работы",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question) != DialogResult.Yes)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
+            _exitRequested = true;
             _timer.Stop();
+            StopTrayListener();
+            TelegramTab telegram = _tabs[8] as TelegramTab;
+            if (telegram != null)
+            {
+                telegram.StopProxy();
+            }
+            DisposeTray();
+        }
+
+        private void CreateTray()
+        {
+            try
+            {
+                _trayOnIcon = TrayIcons.Create(
+                    _windowIcon, Color.FromArgb(53, 199, 89));
+                _trayOffIcon = TrayIcons.Create(
+                    _windowIcon, Color.FromArgb(142, 142, 147));
+
+                _trayMenu = new ContextMenuStrip();
+                _trayMenu.ShowImageMargin = false;
+                _trayMenu.ShowCheckMargin = false;
+                _trayMenu.BackColor = Theme.Current.CardBg;
+                _trayMenu.ForeColor = Theme.Current.TextPrimary;
+                _trayMenu.Opening += OnTrayMenuOpening;
+
+                ToolStripMenuItem open = new ToolStripMenuItem("Открыть окно");
+                open.Click += delegate { ShowFromTray(); };
+                StyleTrayItem(open);
+
+                _trayProtectItem = new ToolStripMenuItem("Выключить защиту");
+                _trayProtectItem.Click += OnTrayProtect;
+                StyleTrayItem(_trayProtectItem);
+
+                _trayTelegramItem = new ToolStripMenuItem("Включить прокси Telegram");
+                _trayTelegramItem.Click += OnTrayTelegram;
+                StyleTrayItem(_trayTelegramItem);
+
+                ToolStripMenuItem check = new ToolStripMenuItem(
+                    "Проверить обновления");
+                check.Click += OnTrayCheck;
+                StyleTrayItem(check);
+
+                ToolStripMenuItem exit = new ToolStripMenuItem("Выйти полностью");
+                exit.Click += delegate { ExitFromTray(); };
+                StyleTrayItem(exit);
+
+                _trayMenu.Items.Add(open);
+                _trayMenu.Items.Add(new ToolStripSeparator());
+                _trayMenu.Items.Add(_trayProtectItem);
+                _trayMenu.Items.Add(_trayTelegramItem);
+                _trayMenu.Items.Add(check);
+                _trayMenu.Items.Add(new ToolStripSeparator());
+                _trayMenu.Items.Add(exit);
+
+                _tray = new NotifyIcon();
+                _tray.Icon = _trayOffIcon;
+                _tray.Text = "Zapret Control";
+                _tray.ContextMenuStrip = _trayMenu;
+                _tray.Visible = true;
+                _tray.DoubleClick += delegate { ShowFromTray(); };
+                _tray.MouseClick += delegate(object sender, MouseEventArgs e)
+                {
+                    if (e.Button == MouseButtons.Left)
+                    {
+                        ShowFromTray();
+                    }
+                };
+                _tray.BalloonTipClicked += delegate
+                {
+                    Action action = _balloonClick;
+                    _balloonClick = null;
+                    if (action != null)
+                    {
+                        action();
+                    }
+                };
+                UpdateTrayState();
+            }
+            catch (Exception)
+            {
+                // No notification area (server core, locked shell) must not
+                // prevent the main window from working.
+                DisposeTray();
+            }
+        }
+
+        private static void StyleTrayItem(ToolStripMenuItem item)
+        {
+            item.BackColor = Theme.Current.CardBg;
+            item.ForeColor = Theme.Current.TextPrimary;
+        }
+
+        private void StartTrayListener()
+        {
+            if (_showEvent == null || _exitEvent == null)
+            {
+                return;
+            }
+            _trayListener = new Thread(TrayListenerLoop);
+            _trayListener.IsBackground = true;
+            _trayListener.Name = "ZapretControl.TraySignals";
+            _trayListener.Start();
+        }
+
+        private void TrayListenerLoop()
+        {
+            WaitHandle[] handles = new WaitHandle[] { _showEvent, _exitEvent };
+            while (!_trayListenerStop)
+            {
+                int index;
+                try
+                {
+                    index = WaitHandle.WaitAny(handles, 1000);
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+                if (index == WaitHandle.WaitTimeout || _trayListenerStop)
+                {
+                    continue;
+                }
+                try
+                {
+                    if (index == 0)
+                    {
+                        BeginInvoke(new Action(ShowFromTray));
+                    }
+                    else
+                    {
+                        BeginInvoke(new Action(ExitFromTray));
+                    }
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+            }
+        }
+
+        private void StopTrayListener()
+        {
+            _trayListenerStop = true;
+            Thread thread = _trayListener;
+            _trayListener = null;
+            if (thread != null && thread.IsAlive)
+            {
+                try
+                {
+                    thread.Join(1500);
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
+        private void ShowFromTray()
+        {
+            if (IsDisposed || Disposing)
+            {
+                return;
+            }
+            ShowInTaskbar = true;
+            if (!Visible)
+            {
+                Show();
+            }
+            if (WindowState == FormWindowState.Minimized)
+            {
+                WindowState = FormWindowState.Normal;
+            }
+            Activate();
+            BringToFront();
+        }
+
+        private void HideToTray()
+        {
+            if (IsDisposed || Disposing || !Visible)
+            {
+                return;
+            }
+            Hide();
+            ShowInTaskbar = false;
+            if (!_trayHintShown && _tray != null && Settings.Load().TrayBalloons)
+            {
+                _trayHintShown = true;
+                Notify("Zapret Control свёрнут в трей",
+                    "Программа продолжает работать. Полный выход — в меню значка.");
+            }
+        }
+
+        private void ExitFromTray()
+        {
+            if (OperationGuard.IsBusy)
+            {
+                // Setup waits only 15 s; remember the request and finish as
+                // soon as the current operation releases the guard.
+                _pendingExit = true;
+                Notify("Дождитесь завершения операции",
+                    "Программа закроется после её окончания.");
+                return;
+            }
+            _pendingExit = false;
+            _exitRequested = true;
+            Close();
+        }
+
+        private void OnTrayProtect(object sender, EventArgs e)
+        {
+            if (OperationGuard.IsBusy)
+            {
+                Notify("Дождитесь завершения операции", "Защита не изменена.");
+                return;
+            }
+            HomeTab home = _tabs[0] as HomeTab;
+            if (home != null)
+            {
+                home.ToggleProtectionFromTray();
+            }
+        }
+
+        private void OnTrayTelegram(object sender, EventArgs e)
+        {
+            TelegramTab telegram = _tabs[8] as TelegramTab;
+            if (telegram == null)
+            {
+                return;
+            }
+            telegram.ToggleFromTray();
+            Notify("Прокси Telegram",
+                telegram.ProxyIsRunning ? "Включён." : "Выключен.");
+        }
+
+        private void OnTrayCheck(object sender, EventArgs e)
+        {
+            UpdatesTab updates = _tabs[5] as UpdatesTab;
+            if (updates == null)
+            {
+                return;
+            }
+            Notify("Zapret Control", "Проверяю обновления…");
+            updates.CheckFromTray();
+        }
+
+        private void OnTrayMenuOpening(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            UpdateTrayState();
+            bool busy = OperationGuard.IsBusy;
+            bool running = false;
+            bool canToggle = false;
+            try
+            {
+                ZapretStatus status = ZapretService.GetStatus();
+                running = status.State == ZapretState.Running;
+                canToggle = running || status.State == ZapretState.Stopped;
+            }
+            catch (Exception)
+            {
+            }
+            _trayProtectItem.Text = running ? "Выключить защиту" : "Включить защиту";
+            _trayProtectItem.Enabled = !busy && canToggle;
+            TelegramTab telegram = _tabs[8] as TelegramTab;
+            bool proxy = telegram != null && telegram.ProxyIsRunning;
+            _trayTelegramItem.Text = proxy
+                ? "Выключить прокси Telegram"
+                : "Включить прокси Telegram";
+            _trayTelegramItem.Enabled = !busy;
+        }
+
+        private void UpdateTrayState()
+        {
+            if (_tray == null || IsDisposed || Disposing)
+            {
+                return;
+            }
+            bool running = false;
+            try
+            {
+                running = ZapretService.GetStatus().State == ZapretState.Running;
+            }
+            catch (Exception)
+            {
+            }
+            TelegramTab telegram = _tabs[8] as TelegramTab;
+            bool proxy = telegram != null && telegram.ProxyIsRunning;
+            Icon icon = running ? _trayOnIcon : _trayOffIcon;
+            if (icon != null)
+            {
+                _tray.Icon = icon;
+            }
+            string text = "Zapret Control: защита " +
+                (running ? "включена" : "выключена") +
+                ", Telegram " + (proxy ? "включён" : "выключен");
+            if (text.Length > 63)
+            {
+                text = text.Substring(0, 63);
+            }
+            _tray.Text = text;
+        }
+
+        private void Notify(string title, string text)
+        {
+            if (_tray == null || !_tray.Visible || IsDisposed || Disposing)
+            {
+                return;
+            }
+            if (!Settings.Load().TrayBalloons)
+            {
+                return;
+            }
+            try
+            {
+                _tray.ShowBalloonTip(4000, title, text, ToolTipIcon.Info);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void OnSessionEnding(object sender, SessionEndingEventArgs e)
+        {
+            _exitRequested = true;
+            _timer.Stop();
+            TelegramTab telegram = _tabs[8] as TelegramTab;
+            if (telegram != null)
+            {
+                telegram.StopProxy();
+            }
+        }
+
+        private void DisposeTray()
+        {
+            if (_tray != null)
+            {
+                _tray.Visible = false;
+                _tray.Dispose();
+                _tray = null;
+            }
+            if (_trayMenu != null)
+            {
+                _trayMenu.Dispose();
+                _trayMenu = null;
+            }
+            if (_trayOnIcon != null)
+            {
+                _trayOnIcon.Dispose();
+                _trayOnIcon = null;
+            }
+            if (_trayOffIcon != null)
+            {
+                _trayOffIcon.Dispose();
+                _trayOffIcon = null;
+            }
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                SystemEvents.SessionEnding -= OnSessionEnding;
+                DataUpdater.Completed -= OnDataUpdateCompleted;
+                StopTrayListener();
+                DisposeTray();
                 _timer.Dispose();
                 _titleFont.Dispose();
                 _tabFont.Dispose();
                 _tabActiveFont.Dispose();
                 _footerFont.Dispose();
+                if (_windowIcon != null)
+                {
+                    _windowIcon.Dispose();
+                }
             }
             base.Dispose(disposing);
         }

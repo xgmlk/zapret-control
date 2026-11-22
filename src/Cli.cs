@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using System.ServiceProcess;
 using System.Text;
 
@@ -21,7 +22,8 @@ namespace ZapretControl
             "--hosts-check|--hosts-apply|--clear-discord-cache|--diagnostics|" +
             "--test[=<standard|dpi>] [--gate=1..16]|--youtube-probe|--update-check|" +
             "--update-payload|--update-app|--rollback-payload|--tg-check|" +
-            "--tg-selftest|--tg-status|--tg-link|--tg-bridge";
+            "--tg-selftest|--tg-status|--tg-link|--tg-bridge|" +
+            "--data-status|--data-update";
 
         private static int Main(string[] args)
         {
@@ -167,6 +169,14 @@ namespace ZapretControl
                 if (command == "--youtube-probe")
                 {
                     return ProbeYouTube();
+                }
+                if (command == "--data-status")
+                {
+                    return PrintDataStatus();
+                }
+                if (command == "--data-update")
+                {
+                    return UpdateData();
                 }
                 if (command == "--tg-check")
                 {
@@ -969,6 +979,35 @@ namespace ZapretControl
             }
             Console.WriteLine("elapsed_ms=" + result.ElapsedMs);
             return result.CdnOk ? 0 : 1;
+        }
+
+        private static int PrintDataStatus()
+        {
+            Console.WriteLine(DataUpdater.StatusText());
+            return 0;
+        }
+
+        private static int UpdateData()
+        {
+            DataUpdateResult result = DataUpdater.Check(false);
+            if (result.Busy)
+            {
+                Console.Error.WriteLine("error=busy");
+                return 75;
+            }
+            if (!result.Ok)
+            {
+                Console.WriteLine("ok=false");
+                Console.WriteLine("seq=" + result.Seq);
+                Console.WriteLine("error=" + (result.Error ?? "unknown"));
+                return 1;
+            }
+            Console.WriteLine("ok=true");
+            Console.WriteLine("changed=" + (result.Changed ? "true" : "false"));
+            Console.WriteLine("seq=" + result.Seq);
+            Console.WriteLine("source=" + result.Source);
+            Console.WriteLine("fronts=" + result.Fronts);
+            return 0;
         }
 
         private static int CheckTelegram()
@@ -1984,7 +2023,7 @@ namespace ZapretControl
             }
 
             string[] fronts = TgFronts.AllBaseDomains;
-            if (fronts.Length != 20)
+            if (fronts.Length < 3 || fronts.Length > 64)
             {
                 Console.Error.WriteLine(
                     "selftest failed: TgFronts domain count");
@@ -1992,7 +2031,8 @@ namespace ZapretControl
             }
             for (int i = 0; i < fronts.Length; i++)
             {
-                if (!fronts[i].EndsWith(".co.uk", StringComparison.Ordinal))
+                if (!DataValidation.IsDomain(fronts[i]) ||
+                    !fronts[i].EndsWith(".co.uk", StringComparison.Ordinal))
                 {
                     Console.Error.WriteLine(
                         "selftest failed: TgFronts domain " + fronts[i]);
@@ -2079,9 +2119,94 @@ namespace ZapretControl
                 return 1;
             }
 
+            string dataError = DataSelfTest();
+            if (dataError != null)
+            {
+                Console.Error.WriteLine("selftest failed: " + dataError);
+                return 1;
+            }
+
             Console.WriteLine("version=" + AppInfo.Version);
             Console.WriteLine("selftest=OK");
             return 0;
+        }
+
+        // Pure crypto and schema checks: no network and no ProgramData writes.
+        // Uses a throwaway P-256 key so the embedded data key is never needed.
+        private static string DataSelfTest()
+        {
+            string validJson = DataSnapshot.Json.Replace(
+                "\"seq\":0", "\"seq\":1");
+            string error;
+            DataDocument valid = DataDocumentParser.Parse(validJson, out error);
+            if (valid == null ||
+                !DataValidation.Validate(valid, DateTime.UtcNow, out error))
+            {
+                return "data snapshot: " + (error ?? "parse");
+            }
+
+            byte[] payload = Encoding.UTF8.GetBytes(validJson);
+            byte[] signature;
+            string publicKey;
+            using (CngKey key = CngKey.Create(CngAlgorithm.ECDsaP256))
+            using (ECDsaCng signer = new ECDsaCng(key))
+            {
+                signature = signer.SignData(payload, HashAlgorithmName.SHA256);
+                publicKey = Convert.ToBase64String(
+                    key.Export(CngKeyBlobFormat.EccPublicBlob));
+            }
+            if (!DataSignature.VerifyWithKey(payload, signature, publicKey))
+            {
+                return "good signature rejected";
+            }
+            byte[] broken = (byte[])signature.Clone();
+            broken[0] ^= 0x01;
+            if (DataSignature.VerifyWithKey(payload, broken, publicKey))
+            {
+                return "bad signature accepted";
+            }
+            if (DataSignature.VerifyWithKey(
+                    payload, signature, AppInfo.DataPublicKeyBlob))
+            {
+                return "embedded key accepted a foreign signature";
+            }
+
+            DataDocument expired = DataDocumentParser.Parse(
+                validJson.Replace(
+                    "2099-12-31T23:59:59Z", "2000-01-01T00:00:00Z"),
+                out error);
+            if (expired == null ||
+                DataValidation.Validate(expired, DateTime.UtcNow, out error))
+            {
+                return "expired data accepted";
+            }
+            DataDocument wrongSchema = DataDocumentParser.Parse(
+                validJson.Replace("\"schema\":1", "\"schema\":2"), out error);
+            if (wrongSchema == null ||
+                DataValidation.Validate(wrongSchema, DateTime.UtcNow, out error))
+            {
+                return "wrong schema accepted";
+            }
+            DataDocument badFront = DataDocumentParser.Parse(
+                validJson.Replace("\"pclead.co.uk\"", "\"bad front\""), out error);
+            if (badFront == null ||
+                DataValidation.Validate(badFront, DateTime.UtcNow, out error))
+            {
+                return "bad front accepted";
+            }
+            if (DataValidation.SequenceAllowed(5, 6) ||
+                !DataValidation.SequenceAllowed(6, 6) ||
+                !DataValidation.SequenceAllowed(7, 6))
+            {
+                return "seq rollback check";
+            }
+            SettingsData defaults = new SettingsData();
+            if (!defaults.CloseToTray || defaults.StartInTray ||
+                !defaults.TrayBalloons)
+            {
+                return "tray settings defaults";
+            }
+            return null;
         }
     }
 }
