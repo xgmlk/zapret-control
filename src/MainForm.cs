@@ -54,6 +54,8 @@ namespace ZapretControl
         private volatile bool _exitRequested;
         private bool _pendingExit;
         private bool _trayHintShown;
+        private bool _trayPromoted;
+        private int _trayPromoteTries;
         private Action _balloonClick;
         private DateTime _lastDataCheck = DateTime.MinValue;
         private DateTime _lastReleaseCheck = DateTime.MinValue;
@@ -838,6 +840,7 @@ namespace ZapretControl
                     }
                 };
                 UpdateTrayState();
+                PromoteTrayIcon();
                 LogTray("created visible=" + _tray.Visible +
                     " text=" + _tray.Text);
             }
@@ -863,6 +866,57 @@ namespace ZapretControl
             }
             catch (Exception)
             {
+            }
+        }
+
+        // Windows 11 defaults every new tray icon to the overflow area. The
+        // shell stores the user's choice as IsPromoted in NotifyIconSettings;
+        // set it only when the value is absent, so an explicit "hide" wins.
+        private void PromoteTrayIcon()
+        {
+            if (_trayPromoted || _trayPromoteTries >= 10)
+            {
+                return;
+            }
+            _trayPromoteTries++;
+            try
+            {
+                using (RegistryKey root = Registry.CurrentUser.OpenSubKey(
+                    @"Control Panel\NotifyIconSettings", true))
+                {
+                    if (root == null)
+                    {
+                        return;
+                    }
+                    string[] names = root.GetSubKeyNames();
+                    for (int i = 0; i < names.Length; i++)
+                    {
+                        using (RegistryKey key = root.OpenSubKey(names[i], true))
+                        {
+                            if (key == null)
+                            {
+                                continue;
+                            }
+                            string path = key.GetValue("ExecutablePath") as string;
+                            if (string.IsNullOrEmpty(path) ||
+                                path.IndexOf("ZapretControl",
+                                    StringComparison.OrdinalIgnoreCase) < 0)
+                            {
+                                continue;
+                            }
+                            _trayPromoted = true;
+                            if (key.GetValue("IsPromoted") == null)
+                            {
+                                key.SetValue("IsPromoted", 1, RegistryValueKind.DWord);
+                                LogTray("promoted " + names[i]);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogTray("promote failed: " + ex.Message);
             }
         }
 
@@ -1120,6 +1174,7 @@ namespace ZapretControl
                 text = text.Substring(0, 63);
             }
             _tray.Text = text;
+            PromoteTrayIcon();
         }
 
         private void Notify(string title, string text)
