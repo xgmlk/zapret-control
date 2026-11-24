@@ -1,8 +1,8 @@
 {
     "schema":  1,
-    "seq":  6,
-    "generated_utc":  "2026-11-24T00:07:15Z",
-    "valid_until":  "2026-12-24T00:07:15Z",
+    "seq":  7,
+    "generated_utc":  "2026-11-24T10:09:07Z",
+    "valid_until":  "2026-12-24T10:09:07Z",
     "telegram":  {
                      "web_host":  "web.telegram.org",
                      "front_host":  "kws{dc}.{front}",
